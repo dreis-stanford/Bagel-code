@@ -40,11 +40,12 @@ The first dealer is decided by friendly agreement or randomly. After that, the p
 The player who went out deals the next hand. If a hand is dead (draw pile runs out), the deal passes to the left.
 
 ### The Cut
-- The player to the right of the dealer cuts the deck.
-- The cutter peeks at the bottom card of the cut portion.
-- If it is a special card (Deuce, Joker, or Q♠), they must keep it and look at the next card down, repeating until reaching a normal card.
-- The first normal card seen stays at the bottom of the deck — only the cutter knows it. It becomes the last drawable card.
-- **Perfect Cut Bonus (optional rule):** If the cut portion contains exactly 13 × N + 1 cards (enough for all players' 13 cards plus the first player's extra card), the cutter earns a Check.
+- The player to the right of the dealer cuts the deck by lifting off the **top part**.
+- The cutter peeks at the **bottom card of the top part**.
+- If it is a special card (Deuce, Joker, or Q♠), they must keep it and look at the next card up, repeating until reaching a normal card.
+- The first normal card seen stays at the bottom of the top part (only the cutter knows it). It will end up at the bottom of the draw pile.
+- Cards are dealt from the **bottom part** (what remains on the table). If the bottom part runs short, dealing continues from the top part. Any leftover cards form the draw pile, with the top part placed on top.
+- **Perfect Cut Bonus (optional rule):** If the bottom part contains exactly 13 × N + 1 cards (enough for all players' 13 cards plus the first player's extra card), the cutter earns a Check.
 
 ### Dealing Cards
 - Each player is dealt 13 cards.
