@@ -97,6 +97,22 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     </label>
     <div class="divider"></div>
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
+    <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
+  </div>
+</div>
+
+<!-- DEBUG SETUP SCREEN -->
+<div id="screen-debug" class="screen">
+  <h2>🛠 Debug Deal</h2>
+  <p style="margin-bottom:1rem;">Specify cards for each player and the top discard card. Use format: <strong>AS</strong>=A♠, <strong>KH</strong>=K♥, <strong>QD</strong>=Q♦, <strong>JC</strong>=J♣, <strong>10S</strong>=10♠, <strong>2H</strong>=2♥ (deuce/wild), <strong>JK</strong>=Joker. Separate with spaces.</p>
+  <div id="debug-player-inputs"></div>
+  <div style="background:#fff;border-radius:12px;border:0.5px solid rgba(0,0,0,0.15);padding:1rem;margin-bottom:1rem;">
+    <h3 style="margin-bottom:8px;">Discard pile top card (optional)</h3>
+    <input type="text" id="debug-discard" placeholder="e.g. 6D" style="margin-bottom:0;">
+  </div>
+  <div class="flex gap-8">
+    <button class="btn primary" onclick="startDebugDeal()">Start debug hand</button>
+    <button class="btn" onclick="showSc('setup')">← Back</button>
   </div>
 </div>
 
@@ -276,6 +292,113 @@ function rc(c,sel,fn,sm){
   return`<div class="${cls}" style="width:${w};height:${h};" ${fn?`onclick="${fn}(${c.id})"`:''}  ${c.declaredAs?`title="${c.declaredAs}"`:''}>
     <div style="font-size:${rs};font-weight:700;">${c.joker?'★':c.rank}</div>
     <div style="font-size:${ss};">${c.suit}</div></div>`;
+}
+
+function showDebugSetup(){
+  // Initialize game state first so players are defined
+  const n=G.playerCount||4;
+  const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
+  // Build per-player input areas
+  let html='';
+  names.forEach((name,i)=>{
+    html+=`<div style="background:#fff;border-radius:12px;border:0.5px solid rgba(0,0,0,0.15);padding:1rem;margin-bottom:0.75rem;">
+      <h3 style="margin-bottom:8px;">${name}'s hand</h3>
+      <input type="text" id="debug-hand-${i}" placeholder="e.g. 4D 5D KH AS JK 2S" style="margin-bottom:4px;">
+      <div style="font-size:11px;color:#999;">Leave blank for random cards. First player gets 14 cards if specified (or 13+1 random).</div>
+    </div>`;
+  });
+  document.getElementById('debug-player-inputs').innerHTML=html;
+  showSc('debug');
+}
+
+function parseDebugCard(str,deck){
+  // Parse a card string like "AS", "KH", "10D", "QS", "JK", "2H"
+  str=str.trim().toUpperCase();
+  if(!str)return null;
+  if(str==='JK'||str==='JOKER'){
+    const c=deck.find(c=>c.joker&&!c._used);
+    if(c){c._used=true;return c;}
+    return null;
+  }
+  const suitMap={'S':'♠','H':'♥','D':'♦','C':'♣'};
+  const rankMap={'A':'A','K':'K','Q':'Q','J':'J','10':'10','9':'9','8':'8','7':'7','6':'6','5':'5','4':'4','3':'3','2':'2'};
+  let rank='',suit='';
+  if(str.length>=2){
+    suit=suitMap[str[str.length-1]];
+    rank=rankMap[str.slice(0,str.length-1)];
+  }
+  if(!rank||!suit)return null;
+  const c=deck.find(c=>c.rank===rank&&c.suit===suit&&!c._used);
+  if(c){c._used=true;return c;}
+  return null;
+}
+
+function startDebugDeal(){
+  const n=G.playerCount||4;
+  const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
+
+  // Mark all cards in a working deck FIRST
+  const deck=createDeck();
+  deck.forEach(c=>c._used=false);
+
+  // Parse each player's specified cards
+  const specifiedHands=names.map((_,i)=>{
+    const input=document.getElementById(`debug-hand-${i}`)?.value.trim()||'';
+    if(!input)return[];
+    const tokens=input.split(/\s+/).filter(Boolean);
+    const cards=[];
+    const errors=[];
+    tokens.forEach(t=>{
+      const c=parseDebugCard(t,deck);
+      if(c)cards.push(c);
+      else errors.push(`Could not find card: "${t}" for ${names[i]}`);
+    });
+    if(errors.length){alert('Errors:\n'+errors.join('\n'));return null;}
+    return cards;
+  });
+  if(specifiedHands.some(h=>h===null))return;
+
+  // Parse discard top
+  const discardStr=document.getElementById('debug-discard')?.value.trim();
+  let discardCard=null;
+  if(discardStr){
+    discardCard=parseDebugCard(discardStr,deck);
+    if(!discardCard){alert(`Could not find discard card: "${discardStr}"`);return;}
+  }
+
+  // Shuffle unused cards for random fill
+  const unused=shuffle(deck.filter(c=>!c._used));
+
+  // Initialize G now that parsing succeeded
+  G={
+    playerCount:n,
+    players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null})),
+    drawPile:[],discardPile:discardCard?[discardCard]:[],hand:0,dealerIdx:0,currentIdx:0,
+    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
+    handFirstPlayer:0,swapFirst:null,reordering:false,
+    optPC:document.getElementById('opt-pc').checked,
+    optRM:document.getElementById('opt-rm').checked,
+    log:[],snapshot:null,savedDeck:null,cutterIdx:0,
+    keptByCutter:[],cutterBot:null,topPart:[],botPart:[]
+  };
+  G.snapshot=snapshotPlayers();
+
+  // Fill remaining hands from shuffled unused pool
+  let ui=0;
+  G.players.forEach((p,i)=>{
+    const target=i===0?14:13;
+    while(p.hand.length<target&&ui<unused.length){
+      p.hand.push(unused[ui++]);
+    }
+  });
+
+  G.drawPile=unused.slice(ui);
+  G.savedDeck=[...G.drawPile];
+  G.currentIdx=0;G.handFirstPlayer=0;G.phase='first-discard';
+  deck.forEach(c=>delete c._used);
+
+  showSc('game');G.sel=[];updateGame();
+  setSt(`Debug deal — ${G.players[0].name} has ${G.players[0].hand.length} cards. Select one to discard (or meld first).`);
 }
 
 function setPC(n){
@@ -722,17 +845,40 @@ function toggleNat(id){
 
 function puStep2(){
   if(PU.selNats.length<2){document.getElementById('pu-err').textContent='Select at least 2 natural cards.';return;}
-  PU.step=2;renderPickup();
+  // Pre-validate: check that top card + selected naturals form a valid meld
+  const selNatCards=PU.selNats.map(id=>G.players[G.currentIdx].hand.find(c=>c.id===id)).filter(Boolean);
+  const testCards=[PU.topCard,...selNatCards];
+  const v=valMeld(testCards);
+  if(!v.valid){
+    document.getElementById('pu-err').textContent=`These cards don't form a valid meld: ${v.msg} You can add more cards or change your selection.`;
+    return;
+  }
+  PU.step=2;PU.preValidation=v;renderPickup();
 }
 
 function confirmPickup(){
   const cp=G.players[G.currentIdx],all=[...G.discardPile];
   G.discardPile=[];all.forEach(c=>cp.hand.push(c));
   G.drewCard=true;G.phase='play';
-  G.mustMeldTopId=PU.topCard.id;
-  G.mustNaturalIds=new Set(PU.selNats);
-  cm('m-pickup');
-  setSt(`Picked up ${all.length} cards! Select the top card (${cLbl(PU.topCard)}) + your chosen naturals + any extras, then tap "Meld selected".`);
+  // Auto-meld the top card with the selected naturals immediately
+  const topCard=cp.hand.find(c=>c.id===PU.topCard.id);
+  const selNatCards=PU.selNats.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  const meldCards=[topCard,...selNatCards].filter(Boolean);
+  const v=valMeld(meldCards);
+  if(v.valid){
+    cp.melds.push({cards:meldCards,type:v.type});
+    meldCards.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+    cp.hasEverMelded=true;
+    G.mustMeldTopId=null;G.mustNaturalIds=null;
+    cm('m-pickup');
+    setSt(`Picked up ${all.length} cards and melded ${meldCards.map(c=>cLbl(c)).join(' ')}. Continue melding or discard.`);
+  } else {
+    // Shouldn't happen since we pre-validated, but fall back to manual
+    G.mustMeldTopId=PU.topCard.id;
+    G.mustNaturalIds=new Set(PU.selNats);
+    cm('m-pickup');
+    setSt(`Picked up ${all.length} cards! Select the top card + your naturals then tap "Meld selected".`);
+  }
   updateGame();
 }
 
@@ -802,52 +948,64 @@ function trySet(c){if(c.length<3||c.length>4)return false;return new Set(c.filte
 
 function tryRun(cards){
   // Returns {valid:true, suit, assignedRanks:[{card,rank}]} or false
-  // card ORDER defines wild positions — first card = lowest rank in run
   if(cards.length<3)return false;
   const nat=cards.filter(c=>!c.wild);
   if(!nat.length)return false;
   const suits=new Set(nat.map(c=>c.suit));
   if(suits.size>1)return false;
   const suit=nat[0].suit;
-
-  // Determine the run's rank sequence from the ordered card list
-  // Strategy: anchor on the natural cards' ranks, assign consecutive ranks to wilds
-  // The player's order tells us the intended sequence low→high (left to right)
   const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
+  if(new Set(natVals).size!==nat.length)return false; // duplicate ranks
   const minNat=natVals[0],maxNat=natVals[natVals.length-1];
   const n=cards.length;
   const wildCount=cards.filter(c=>c.wild).length;
-
-  // Figure out run start: naturals span minNat..maxNat, wilds fill remaining slots
-  // The player's left-to-right order determines which end wilds extend to
-  // Count wilds to the LEFT of the leftmost natural in the ordered card list
-  const firstNatIdx=cards.findIndex(c=>!c.wild);
-  const wildsLeft=firstNatIdx; // wilds before first natural = extend low end
-  const wildsRight=wildCount-wildsLeft-(maxNat-minNat+1-nat.length); // wilds after last natural = extend high end
-  // (wilds in gaps are accounted for by the span check)
-
-  // Validate: naturals must form a valid partial sequence (no duplicates, within span)
-  if(new Set(natVals).size!==nat.length)return false; // duplicate ranks
   if(maxNat-minNat>=n)return false; // naturals too spread out
 
-  const runStart=minNat-wildsLeft;
-  const runEnd=runStart+n-1;
-  if(runStart<2||runEnd>14)return false; // out of valid range (3..A)
-
-  // Assign ranks to each card in order
-  const assignedRanks=[];
-  let seq=runStart;
-  for(const card of cards){
-    if(!card.wild){
-      if(RO[card.rank]!==seq)return false; // natural not in expected position
-    }
-    assignedRanks.push({card,rank:seq});
-    seq++;
+  // No wilds: simple validation, order doesn't matter
+  if(wildCount===0){
+    if(maxNat-minNat!==n-1)return false;
+    if(minNat<3||maxNat>14)return false;
+    const sorted=nat.slice().sort((a,b)=>RO[a.rank]-RO[b.rank]);
+    return{valid:true,suit,assignedRanks:sorted.map((c,i)=>({card:c,rank:minNat+i}))};
   }
 
-  return{valid:true,suit,assignedRanks};
-}
+  // With wilds: use selection order to determine which end wilds extend to.
+  // Count wilds to the left of the first natural in selection order.
+  // If extending low would go below rank 3, try extending high instead.
+  const firstNatIdx=cards.findIndex(c=>!c.wild);
+  const lastNatIdx=cards.length-1-[...cards].reverse().findIndex(c=>!c.wild);
+  const wildsLeft=firstNatIdx;
+  const wildsRight=cards.length-1-lastNatIdx;
 
+  // Try player-intended direction first, fall back if out of range
+  const attempts=[];
+  // Primary: wildsLeft extend low, wildsRight extend high
+  attempts.push(minNat-wildsLeft);
+  // Fallback: if primary goes below 3, put all wilds on high end
+  if(minNat-wildsLeft<3) attempts.push(minNat);
+  // Fallback: if primary goes above 14, put all wilds on low end
+  if(maxNat+wildsRight>14) attempts.push(minNat-wildCount+(maxNat-minNat+1-nat.length));
+
+  for(const runStart of attempts){
+    const runEnd=runStart+n-1;
+    if(runStart<3||runEnd>14)continue;
+    // Assign ranks: naturals go to their correct rank position, wilds fill gaps
+    const natByRank=new Map(nat.map(c=>[RO[c.rank],c]));
+    const wilds=[...cards.filter(c=>c.wild)];
+    let wildIdx=0,valid=true;
+    const assignedRanks=[];
+    for(let rank=runStart;rank<=runEnd;rank++){
+      if(natByRank.has(rank)){
+        assignedRanks.push({card:natByRank.get(rank),rank});
+      } else {
+        if(wildIdx>=wilds.length){valid=false;break;}
+        assignedRanks.push({card:wilds[wildIdx++],rank});
+      }
+    }
+    if(valid&&wildIdx===wilds.length) return{valid:true,suit,assignedRanks};
+  }
+  return false;
+}
 
 function openAdd(){
   const cp=G.players[G.currentIdx];
@@ -948,7 +1106,7 @@ function openDeclare(){
 function confirmDecl(){const cp=G.players[G.currentIdx];cp.declared=true;cp.declaredCount=+document.getElementById('decl-sel').value;cp.missedDeclaration=false;cm('m-decl');updateDeclUI();}
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
 
-function endTurnHO(){G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.currentIdx=(G.currentIdx+1)%G.players.length;G.phase='draw';clearSt();showHandoff();}
+function endTurnHO(){G.players[G.currentIdx].turnCount++;G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.currentIdx=(G.currentIdx+1)%G.players.length;G.phase='draw';clearSt();showHandoff();}
 
 function endHand(wi){
   const winner=G.players[wi];
