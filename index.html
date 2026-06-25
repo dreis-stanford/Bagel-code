@@ -347,11 +347,11 @@ function showCut(deck){
       </div>
       <div style="display:flex;gap:16px;align-items:flex-end;">
         <div style="text-align:center;">
-          <div style="font-size:11px;color:#666;margin-bottom:4px;">Top portion<br>(taken away)</div>
+          <div style="font-size:11px;color:#666;margin-bottom:4px;">Top part<br>(lifted off, peeked at)</div>
           <div id="cut-top-vis" style="background:#2E4057;border-radius:4px;width:52px;margin:0 auto;transition:height 0.15s;"></div>
         </div>
         <div style="text-align:center;">
-          <div style="font-size:11px;color:#666;margin-bottom:4px;">Bottom portion<br>(stays on table)</div>
+          <div style="font-size:11px;color:#666;margin-bottom:4px;">Bottom part<br>(dealt from)</div>
           <div id="cut-bot-vis" style="background:#5a7a9a;border-radius:4px;width:52px;margin:0 auto;transition:height 0.15s;"></div>
         </div>
         <div id="cut-exact-badge" style="display:none;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;font-size:13px;color:#2e7d32;flex:1;">
@@ -370,28 +370,33 @@ function updateCutSlider(val){
   const maxH=120,scale=deck.length;
   document.getElementById('cut-top-vis').style.height=Math.round(above/scale*maxH)+'px';
   document.getElementById('cut-bot-vis').style.height=Math.round(below/scale*maxH)+'px';
-  // Show vague labels, not exact counts
   const abovePct=Math.round(above/deck.length*100);
-  document.getElementById('cut-above-lbl').textContent=`Above cut: ~${abovePct}%`;
-  document.getElementById('cut-below-lbl').textContent=`Below cut: ~${100-abovePct}%`;
-  const isExact=above===exact;
+  document.getElementById('cut-above-lbl').textContent=`Top part (lifted): ~${abovePct}%`;
+  document.getElementById('cut-below-lbl').textContent=`Bottom part (dealt): ~${100-abovePct}%`;
+  // Perfect cut: bottom part has exactly 13×N+1 cards
+  const isExact=below===exact;
   document.getElementById('cut-exact-badge').style.display=isExact&&G.optPC?'block':'none';
 }
 
 function confirmCut(){
   const deck=G.deck,n=G.players.length,ci=G.cutterIdx,cutter=G.players[ci],exact=13*n+1;
   const cp=G.cutSliderVal;
-  const cutPart=deck.slice(0,cp),rem=deck.slice(cp);
-  let kept=[],botN=null,pi=cutPart.length-1;
-  while(pi>=0){if(isSp(cutPart[pi])){kept.push(cutPart[pi]);pi--;}else{botN=cutPart[pi];break;}}
-  G.keptByCutter=kept;G.cutterBot=botN;G.perfectCut=(cp===exact);G.cutPart=cutPart;G.rem=rem;
+  const topPart=deck.slice(0,cp);   // lifted off by cutter — peeked at bottom
+  const botPart=deck.slice(cp);     // stays on table — dealt from
+  // Peek at bottom of top part; keep any special cards found there
+  let kept=[],botN=null,pi=topPart.length-1;
+  while(pi>=0){if(isSp(topPart[pi])){kept.push(topPart[pi]);pi--;}else{botN=topPart[pi];break;}}
+  G.keptByCutter=kept;G.cutterBot=botN;
+  // Perfect cut: bottom part has exactly enough to deal everyone
+  G.perfectCut=(botPart.length===exact);
+  G.topPart=topPart;G.botPart=botPart;
   if(G.perfectCut&&G.optPC) cutter.checks.push({hand:G.hand+1,type:'Perfect Cut'});
 
-  let html=`<p style="margin-bottom:0.75rem;">${cutter.name} cuts the deck and peeks at the bottom card.</p>
+  let html=`<p style="margin-bottom:0.75rem;">${cutter.name} lifts off the top part and peeks at its bottom card.</p>
   <div class="player-strip mb-1">
-    <div style="font-weight:500;margin-bottom:6px;">${cutter.name} cuts${G.perfectCut?' — exact!':''}</div>`;
-  if(kept.length>0) html+=`<div class="warning-bar">Special card(s) found — kept by ${cutter.name}:</div><div class="flex gap-8 wrap mt-half">${kept.map(c=>rc(c)).join('')}</div>`;
-  if(botN) html+=`<div style="margin-top:10px;"><div style="font-size:13px;font-weight:500;margin-bottom:6px;">Bottom card (only you can see this):</div><div style="display:flex;align-items:center;gap:12px;">${rc(botN)}<span style="font-size:13px;color:#666;">This card stays at the bottom of the draw pile — don&#x2019;t show anyone.</span></div></div>`;
+    <div style="font-weight:500;margin-bottom:6px;">${cutter.name} cuts${G.perfectCut?' — perfect cut!':''}</div>`;
+  if(kept.length>0) html+=`<div class="warning-bar">Special card(s) found at bottom of top part — kept by ${cutter.name}:</div><div class="flex gap-8 wrap mt-half">${kept.map(c=>rc(c)).join('')}</div>`;
+  if(botN) html+=`<div style="margin-top:10px;"><div style="font-size:13px;font-weight:500;margin-bottom:6px;">Bottom card of top part (only you can see this):</div><div style="display:flex;align-items:center;gap:12px;">${rc(botN)}<span style="font-size:13px;color:#666;">This card goes to the bottom of the draw pile — don&#x2019;t show anyone.</span></div></div>`;
   if(G.perfectCut&&G.optPC) html+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:#2e7d32;">✓ Perfect cut! ${cutter.name} earns a Check.</div>`;
   html+=`</div><button class="btn primary" onclick="completeCut()">Continue to deal</button>`;
   document.getElementById('cut-content').innerHTML=html;
@@ -401,10 +406,11 @@ function completeCut(){
   const n=G.players.length,ci=G.cutterIdx,fi=(G.dealerIdx+1)%n;
   G.handFirstPlayer=fi;
   const kIds=new Set(G.keptByCutter.map(c=>c.id)),botId=G.cutterBot?.id;
-  let pool=[...G.cutPart.filter(c=>!kIds.has(c.id)&&c.id!==botId),...G.rem];
-  pool=shuffle(pool);
-  if(botId) pool.push(G.cutterBot);
-  G.savedDeck=[...pool]; // save for hand restart
+  // Deal from bottom part first, then top part (minus kept/peeked cards), peeked card goes to bottom of draw pile
+  const topRemainder=G.topPart.filter(c=>!kIds.has(c.id)&&c.id!==botId);
+  let pool=[...G.botPart,...topRemainder];
+  if(botId) pool.push(G.cutterBot); // peeked normal card goes to very bottom
+  G.savedDeck=[...pool];
   G.players[ci].hand=[...G.keptByCutter];
   for(let pi=0;pi<n;pi++){
     const idx=(fi+pi)%n,target=(idx===fi?14:13)-(idx===ci?G.keptByCutter.length:0);
