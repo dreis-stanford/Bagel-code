@@ -608,7 +608,8 @@ function renderAllMelds(){
 function renderHand(){
   const cp=G.players[G.currentIdx];
   // Use custom order if set, otherwise auto-sort
-  if(!cp.handOrder||cp.handOrder.length!==cp.hand.length){
+  if(!cp.handOrder){
+    // First time: auto-sort
     cp.handOrder=[...cp.hand].sort((a,b)=>{
       if(a.joker!==b.joker)return a.joker?-1:1;
       if(a.wild!==b.wild)return a.wild?-1:1;
@@ -617,9 +618,12 @@ function renderHand(){
       if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
       return(RO[b.rank]||0)-(RO[a.rank]||0);
     }).map(c=>c.id);
-    // Filter to only ids still in hand
-    cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
   }
+  // Always sync: remove IDs no longer in hand, keep order otherwise
+  const handIds=new Set(cp.hand.map(c=>c.id));
+  cp.handOrder=cp.handOrder.filter(id=>handIds.has(id));
+  // Add any new cards not yet in order (e.g. pile pickup cards) at the end
+  cp.hand.forEach(c=>{if(!cp.handOrder.includes(c.id))cp.handOrder.push(c.id);});
   const ordered=cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   const reorder=G.reordering;
   let hhtml=`<div style='margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'>
@@ -778,7 +782,11 @@ function updateDeclUI(){
 function drawCard(){
   if(G.phase!=='draw'){setWarn('Not your draw phase.');return;}
   if(!G.drawPile.length){endHandDead();return;}
-  G.players[G.currentIdx].hand.push(G.drawPile.pop());
+  const drawn=G.drawPile.pop();
+  const cp=G.players[G.currentIdx];
+  cp.hand.push(drawn);
+  // Add to END of handOrder so drawn card appears rightmost
+  if(cp.handOrder) cp.handOrder.push(drawn.id);
   G.drewCard=true;G.phase='play';clearSt();updateGame();
 }
 
@@ -788,41 +796,55 @@ function startPickup(){
   if(!G.discardPile.length){setWarn('The discard pile is empty.');return;}
   const cp=G.players[G.currentIdx];
   const top=G.discardPile[G.discardPile.length-1];
-  // All non-wild cards qualify as "naturals" for the 2-natural pickup requirement
-  const naturals=cp.hand.filter(c=>!c.wild);
-  if(naturals.length<2){setWarn('You need at least 2 natural (non-wild) cards in your hand to pick up the pile.');return;}
-  PU={step:1,topCard:top,selNats:[],allNats:naturals};
+  // Naturals = non-wild cards in hand PLUS natural cards already melded on the table
+  const naturalsInHand=cp.hand.filter(c=>!c.wild);
+  const naturalsOnTable=cp.melds.flatMap(m=>m.cards.filter(c=>!c.wild));
+  const allNaturals=[...naturalsInHand,...naturalsOnTable];
+  if(allNaturals.length<2){setWarn('You need at least 2 natural cards (in hand or on table) to pick up the pile.');return;}
+  PU={step:1,topCard:top,selNats:[],allNats:allNaturals,naturalsInHand,naturalsOnTable};
   renderPickup();
   document.getElementById('m-pickup').style.display='flex';
 }
 
 function renderPickup(){
   document.getElementById('pu-steps').innerHTML=[
-    {label:`Step 1 — Select 2+ naturals from your hand to meld with ${cLbl(PU.topCard)}`,active:PU.step===1,done:PU.step>1},
+    {label:`Step 1 — Select 2+ naturals to meld with ${cLbl(PU.topCard)}`,active:PU.step===1,done:PU.step>1},
     {label:'Step 2 — Confirm pickup',active:PU.step===2,done:false}
   ].map(s=>`<div class="pickup-step ${s.active?'active':s.done?'done':''}">${s.done?'✓ ':''}${s.label}</div>`).join('');
 
   if(PU.step===1){
+    const handNats=PU.naturalsInHand||PU.allNats;
+    const tableNats=PU.naturalsOnTable||[];
+    let natsHtml=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;">From your hand:</div>
+      <div class="flex gap-8 wrap" style="margin-bottom:${tableNats.length?'10px':'0'};">
+        ${handNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
+      </div>`;
+    if(tableNats.length){
+      natsHtml+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:4px;">From your melds on table:</div>
+        <div class="flex gap-8 wrap">
+          ${tableNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
+        </div>`;
+    }
     document.getElementById('pu-content').innerHTML=`
       <div style="margin-bottom:0.75rem;">
         <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Top of discard pile (must be included in meld):</div>
         <div style="margin-bottom:12px;">${rc(PU.topCard)}</div>
-        <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Select 2+ natural cards from your hand:</div>
-        <div class="flex gap-8 wrap" id="pu-nats">
-          ${PU.allNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
-        </div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Select 2+ naturals (from hand or table melds):</div>
+        <div id="pu-nats">${natsHtml}</div>
       </div>
       <div id="pu-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
       <button class="btn primary" style="width:100%" onclick="puStep2()">Next →</button>`;
   } else {
-    const selNatCards=PU.selNats.map(id=>G.players[G.currentIdx].hand.find(c=>c.id===id)).filter(Boolean);
+    const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
+    const fromTable=selNatCards.filter(c=>PU.naturalsOnTable&&PU.naturalsOnTable.some(t=>t.id===c.id));
     document.getElementById('pu-content').innerHTML=`
       <div style="font-size:13px;margin-bottom:0.75rem;">You will pick up all <strong>${G.discardPile.length} cards</strong> from the discard pile.</div>
       <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Your first meld must include:</div>
-      <div class="flex gap-8 wrap center" style="margin-bottom:1rem;">
+      <div class="flex gap-8 wrap center" style="margin-bottom:0.5rem;">
         ${rc(PU.topCard)} <span style="color:#666;font-size:13px;">+</span> ${selNatCards.map(c=>rc(c)).join('')}
         <span style="font-size:12px;color:#666;align-self:center;">(you can add more when melding)</span>
       </div>
+      ${fromTable.length?`<div style="font-size:12px;color:#666;margin-bottom:0.75rem;">Note: ${fromTable.map(c=>cLbl(c)).join(', ')} from your table melds count toward the 2-natural requirement.</div>`:''}
       <button class="btn primary" style="width:100%;margin-bottom:8px;" onclick="confirmPickup()">Pick up the pile</button>
       <button class="btn" style="width:100%" onclick="PU.step=1;renderPickup();">← Back</button>`;
   }
@@ -840,13 +862,24 @@ function natCard(c,picked){
 
 function toggleNat(id){
   const i=PU.selNats.indexOf(id);if(i>=0)PU.selNats.splice(i,1);else PU.selNats.push(id);
-  document.getElementById('pu-nats').innerHTML=PU.allNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('');
+  // Re-render just the nat cards section
+  const handNats=PU.naturalsInHand||PU.allNats;
+  const tableNats=PU.naturalsOnTable||[];
+  let html=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;">From your hand:</div>
+    <div class="flex gap-8 wrap" style="margin-bottom:${tableNats.length?'10px':'0'};">
+      ${handNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
+    </div>`;
+  if(tableNats.length){
+    html+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:4px;">From your melds on table:</div>
+      <div class="flex gap-8 wrap">${tableNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}</div>`;
+  }
+  document.getElementById('pu-nats').innerHTML=html;
 }
 
 function puStep2(){
   if(PU.selNats.length<2){document.getElementById('pu-err').textContent='Select at least 2 natural cards.';return;}
   // Pre-validate: check that top card + selected naturals form a valid meld
-  const selNatCards=PU.selNats.map(id=>G.players[G.currentIdx].hand.find(c=>c.id===id)).filter(Boolean);
+  const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
   const testCards=[PU.topCard,...selNatCards];
   const v=valMeld(testCards);
   if(!v.valid){
@@ -862,7 +895,7 @@ function confirmPickup(){
   G.drewCard=true;G.phase='play';
   // Auto-meld the top card with the selected naturals immediately
   const topCard=cp.hand.find(c=>c.id===PU.topCard.id);
-  const selNatCards=PU.selNats.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
   const meldCards=[topCard,...selNatCards].filter(Boolean);
   const v=valMeld(meldCards);
   if(v.valid){
@@ -890,8 +923,34 @@ function openMeld(){
   document.getElementById('meld-err').textContent='';
   const jkrs=sel.filter(c=>c.joker);
   if(jkrs.length){
-    document.getElementById('jdecl-inputs').innerHTML=jkrs.map(j=>`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" style="margin-bottom:0;"></div>`).join('');
-    document.getElementById('jdecl-area').style.display='block';
+    // Try to auto-determine joker position from the run context
+    const nat=sel.filter(c=>!c.wild);
+    const autoDecls={};
+    if(nat.length>=2&&new Set(nat.map(c=>c.suit)).size===1){
+      // It's a run — try running valMeld to get assignedRanks
+      const runResult=tryRun(sel);
+      if(runResult&&runResult.assignedRanks){
+        runResult.assignedRanks.forEach(({card,rank})=>{
+          if(card.joker){
+            const rankName=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);
+            autoDecls[card.id]=rankName+runResult.suit;
+          }
+        });
+      }
+    }
+    const needsInput=jkrs.filter(j=>!autoDecls[j.id]);
+    if(needsInput.length){
+      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||''}" style="margin-bottom:0;"></div>`).join('');
+      document.getElementById('jdecl-area').style.display='block';
+    } else {
+      // All jokers auto-declared — pre-fill hidden inputs and hide section
+      document.getElementById('jdecl-inputs').innerHTML=jkrs.map(j=>`<input type="hidden" id="jd${j.id}" value="${autoDecls[j.id]}">`).join('');
+      document.getElementById('jdecl-area').style.display='none';
+      // Show auto-declaration info
+      document.getElementById('meld-err').style.color='#2e7d32';
+      document.getElementById('meld-err').textContent=`Joker auto-declared as: ${jkrs.map(j=>autoDecls[j.id]).join(', ')}`;
+    }
+    jkrs.forEach(j=>{if(autoDecls[j.id])j.declaredAs=autoDecls[j.id];});
   } else document.getElementById('jdecl-area').style.display='none';
   document.getElementById('m-meld').style.display='flex';
 }
@@ -899,7 +958,8 @@ function openMeld(){
 function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
-  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=i.value.trim()||null;});
+  document.getElementById('meld-err').style.color='#c0392b';
+  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=i.value.trim()||j.declaredAs||null;});
 
   if(G.mustMeldTopId!==null){
     if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
@@ -978,13 +1038,15 @@ function tryRun(cards){
   const wildsRight=cards.length-1-lastNatIdx;
 
   // Try player-intended direction first, fall back if out of range
-  const attempts=[];
-  // Primary: wildsLeft extend low, wildsRight extend high
-  attempts.push(minNat-wildsLeft);
-  // Fallback: if primary goes below 3, put all wilds on high end
-  if(minNat-wildsLeft<3) attempts.push(minNat);
-  // Fallback: if primary goes above 14, put all wilds on low end
-  if(maxNat+wildsRight>14) attempts.push(minNat-wildCount+(maxNat-minNat+1-nat.length));
+  const attempts=new Set();
+  // Primary: wildsLeft extend low, wildsRight extend high (player's intended order)
+  attempts.add(minNat-wildsLeft);
+  // Always also try all wilds on high end and all wilds on low end as fallbacks
+  // This ensures e.g. J,10,wild can be 9,10,J (wild low) as well as 10,J,Q (wild high)
+  attempts.add(minNat); // all wilds high
+  attempts.add(minNat-wildCount+(maxNat-minNat+1-nat.length)); // all wilds low
+  // Also try every possible runStart that fits the naturals
+  for(let s=minNat-wildCount;s<=minNat;s++) attempts.add(s);
 
   for(const runStart of attempts){
     const runEnd=runStart+n-1;
@@ -1055,8 +1117,16 @@ function confirmRedeem(i){
   const it=window._jkrs[i],cp=G.players[G.currentIdx];
   const nat=cp.hand.find(c=>!c.wild&&cLbl(c)===it.card.declaredAs);
   if(!nat){document.getElementById('redeem-err').textContent=`Need ${it.card.declaredAs} in hand.`;return;}
+  // Replace the specific joker in the meld with the natural card (match by card ID)
+  const jokerCard=G.players[it.pi].melds[it.mi].cards[it.ci];
+  if(jokerCard.id!==it.card.id){document.getElementById('redeem-err').textContent='Joker mismatch — please try again.';return;}
   G.players[it.pi].melds[it.mi].cards[it.ci]=nat;
-  cp.hand=cp.hand.filter(c=>c.id!==nat.id);cp.hand.push(it.card);
+  cp.hand=cp.hand.filter(c=>c.id!==nat.id);
+  // Preserve the joker's declaredAs so it can be used again
+  const jokerToReturn={...jokerCard};
+  cp.hand.push(jokerToReturn);
+  // Add to end of handOrder
+  if(cp.handOrder) cp.handOrder.push(jokerToReturn.id);
   G.sel=[];cm('m-redeem');updateGame();
 }
 
@@ -1208,7 +1278,14 @@ function showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove){
     html+=`</div>`;
   }
 
-  if(G.players.some(p=>p.points>=1000)) html+=`<div class="status-bar" style="margin-top:1rem;">A player has reached 1,000 points — the game can end!</div>`;
+  if(G.players.some(p=>p.points>=1000)){
+    html+=`<div class="status-bar" style="margin-top:1rem;">A player has reached 1,000 points — game over! Tallying final scores...</div>`;
+    document.getElementById('eh-content').innerHTML=html;
+    G.dealerIdx=wi;G.hand++;
+    // Auto-proceed to final scores after a short delay
+    setTimeout(()=>showFinal(),2000);
+    return;
+  }
   document.getElementById('eh-content').innerHTML=html;
   G.dealerIdx=wi;G.hand++;
 }
@@ -1264,45 +1341,55 @@ function restartHand(){
 }
 
 function showScores(){
-  const rankNames={14:'A',13:'K',12:'Q',11:'J',10:'10',9:'9',8:'8',7:'7',6:'6',5:'5',4:'4',3:'3'};
-  let html=`<table class="score-table"><thead><tr><th>Player</th><th>Points</th><th>Money</th><th>Checks</th></tr></thead><tbody>`+
-    G.players.map(p=>`<tr><td>${p.name}${p.id===G.currentIdx?' (you)':''}</td><td>${p.points}</td><td style="color:${p.money>=0?'#2e7d32':'#c0392b'};">${p.money>=0?'+':''}${p.money.toFixed(1)}¢</td><td>${p.checks.map(c=>`<span class="check-tag">${c.type}</span>`).join('')||'—'}</td></tr>`).join('')+
-    '</tbody></table>';
-
-  // Debug / history panel
-  html+=`<div style="margin-top:1.25rem;">
-    <div style="font-size:13px;font-weight:500;margin-bottom:8px;">Hand history &amp; debug</div>
-    <div class="flex gap-8 wrap" style="margin-bottom:0.75rem;">
-      <button class="btn small" onclick="restartHand()">↺ Restart current hand</button>
-      <button class="btn small" onclick="undoLastHand()" ${!G.log||!G.log.length?'disabled':''}>↩ Undo last hand</button>
-    </div>`;
+  const n=G.players.length;
+  let html=`<div style="overflow-x:auto;">
+    <table class="score-table" style="min-width:${100+n*90}px;">
+      <thead><tr>
+        <th style="min-width:60px;">Hand</th>
+        ${G.players.map(p=>`<th style="min-width:90px;">${p.name}${p.id===G.currentIdx?' (you)':''}</th>`).join('')}
+      </tr></thead><tbody>`;
 
   if(G.log&&G.log.length){
-    html+=`<div style="max-height:240px;overflow-y:auto;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;">
-      <table class="score-table" style="font-size:12px;">
-        <thead><tr><th>Hand</th><th>Winner</th><th>Checks</th>${G.players.map(p=>`<th>${p.name}</th>`).join('')}</tr></thead><tbody>`;
-    [...G.log].reverse().forEach(entry=>{
-      html+=`<tr>
-        <td>${entry.handNum}</td>
-        <td>${entry.winner}${entry.isBagel?' 🥯':entry.isDream?' ✨':''}</td>
-        <td>${entry.checks.map(c=>`<span class="check-tag" style="font-size:10px;">✓</span>`).join('')||'—'}</td>
+    G.log.forEach(entry=>{
+      html+=`<tr style="border-bottom:1px solid rgba(0,0,0,0.08);">
+        <td style="font-size:12px;color:#666;">#${entry.handNum}<br><span style="font-size:10px;">${entry.winner}${entry.isBagel?' 🥯':entry.isDream?' ✨':''}</span></td>
         ${entry.scores.map(s=>{
           const isWinner=s.name===entry.winner;
           const circled=isWinner&&entry.isBagel;
           const scoreStr=`${s.total>=0?'+':''}${s.total}`;
           const scoreEl=circled
-            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;border:2px solid #1565c0;font-size:11px;font-weight:700;color:#1565c0;">${scoreStr}</span>`
-            : `<span style="color:${s.total>=0?'#2e7d32':'#c0392b'};">${scoreStr}</span>`;
-          const checksEl=isWinner&&entry.checks.length?entry.checks.map(()=>`<span class="check-tag" style="font-size:9px;padding:1px 4px;">✓</span>`).join(''):'';
-          return`<td>${scoreEl}${checksEl}<br><span style="color:#666;font-size:11px;">${s.running}pts</span></td>`;
+            ?`<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:2px solid #1565c0;font-size:11px;font-weight:700;color:#1565c0;">${scoreStr}</span>`
+            :`<strong style="color:${s.total>=0?'#2e7d32':'#c0392b'};">${scoreStr}</strong>`;
+          const checksEl=isWinner&&entry.checks.length?` ${entry.checks.map(()=>`<span style="color:#2e7d32;font-size:11px;">✓</span>`).join('')}`:'';
+          return`<td>${scoreEl}${checksEl}</td>`;
         }).join('')}
+      </tr>
+      <tr style="background:#f8f8f6;">
+        <td style="font-size:10px;color:#999;">subtotal</td>
+        ${entry.scores.map(s=>`<td style="font-size:12px;font-weight:500;">${s.running}</td>`).join('')}
       </tr>`;
     });
-    html+=`</tbody></table></div>`;
   } else {
-    html+=`<div class="muted" style="font-size:12px;">No hands completed yet.</div>`;
+    html+=`<tr><td colspan="${n+1}" style="color:#999;font-size:12px;padding:12px;">No hands completed yet.</td></tr>`;
   }
-  html+=`</div>`;
+
+  html+=`<tr style="border-top:2px solid rgba(0,0,0,0.2);background:#f0f0ec;">
+    <td style="font-weight:500;font-size:12px;">Total</td>
+    ${G.players.map(p=>{
+      const checksStr=p.checks.map(c=>`<span style="font-size:9px;background:#e8f5e9;color:#2e7d32;padding:1px 4px;border-radius:8px;margin:1px;display:inline-block;">✓</span>`).join('');
+      const bagelsStr=p.bagels.length?`<span style="font-size:9px;background:#e3f2fd;color:#1565c0;padding:1px 4px;border-radius:8px;">⊙×${p.bagels.length}</span>`:'';
+      return`<td><strong>${p.points}</strong><br><span style="color:${p.money>=0?'#2e7d32':'#c0392b'};font-size:11px;">${p.money>=0?'+':''}${p.money.toFixed(1)}¢</span><br>${checksStr}${bagelsStr}</td>`;
+    }).join('')}
+  </tr>`;
+
+  html+=`</tbody></table></div>
+  <div style="margin-top:1rem;padding-top:0.75rem;border-top:0.5px solid rgba(0,0,0,0.12);">
+    <div style="font-size:12px;font-weight:500;color:#666;margin-bottom:6px;">Debug</div>
+    <div class="flex gap-8 wrap">
+      <button class="btn small" onclick="restartHand()">↺ Restart hand</button>
+      <button class="btn small" onclick="undoLastHand()" ${!G.log||!G.log.length?'disabled':''}>↩ Undo last hand</button>
+    </div>
+  </div>`;
 
   document.getElementById('score-content').innerHTML=html;
   document.getElementById('m-score').style.display='flex';
