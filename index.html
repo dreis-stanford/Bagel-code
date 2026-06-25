@@ -372,7 +372,7 @@ function startDebugDeal(){
   // Initialize G now that parsing succeeded
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null})),
+    players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false})),
     drawPile:[],discardPile:discardCard?[discardCard]:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
     handFirstPlayer:0,swapFirst:null,reordering:false,
@@ -412,7 +412,7 @@ function startGame(){
   const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null})),
+    players:names.map((name,i)=>({name,id:i,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
     handFirstPlayer:1,swapFirst:null,reordering:false,
@@ -439,7 +439,7 @@ function restoreSnapshot(snap){
 
 function dealHand(){
   G.snapshot=snapshotPlayers(); // save state before this hand
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.savedDeck=null; // will be saved after cut
   showCut(shuffle(createDeck()));
@@ -1106,16 +1106,25 @@ function openDeclare(){
 function confirmDecl(){const cp=G.players[G.currentIdx];cp.declared=true;cp.declaredCount=+document.getElementById('decl-sel').value;cp.missedDeclaration=false;cm('m-decl');updateDeclUI();}
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
 
-function endTurnHO(){G.players[G.currentIdx].turnCount++;G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.currentIdx=(G.currentIdx+1)%G.players.length;G.phase='draw';clearSt();showHandoff();}
+function endTurnHO(){
+  const cp=G.players[G.currentIdx];
+  cp.turnCount++;
+  cp.hadMeldsAtTurnStart=cp.hasEverMelded; // snapshot for next turn's bagel/dream check
+  G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;
+  G.currentIdx=(G.currentIdx+1)%G.players.length;
+  G.phase='draw';clearSt();showHandoff();
+}
 
 function endHand(wi){
   const winner=G.players[wi];
   const meldedCards=winner.melds.flatMap(m=>m.cards);
   const totalMelded=meldedCards.length;
-  // Bagel: went out all 13 at once, NOT on first turn (turnCount>0 means they've had a previous turn)
-  const isBagel=totalMelded===13&&!winner.hasEverMelded&&winner.turnCount>0;
-  // Dream: went out all 13 at once on very first turn
-  const isDream=totalMelded===13&&!winner.hasEverMelded&&winner.turnCount===0;
+  // Dream: went out all 13 at once on very first turn (no prior melds at start of this turn, turnCount===0)
+  // Bagel: went out all 13 at once but NOT on first turn
+  // Key: hadMeldsAtTurnStart===false means no melds existed before this turn began
+  const wentOutAllAtOnce=totalMelded===13&&!winner.hadMeldsAtTurnStart;
+  const isBagel=wentOutAllAtOnce&&winner.turnCount>0;
+  const isDream=wentOutAllAtOnce&&winner.turnCount===0;
 
   const payout=(isBagel||isDream)?10:5;
   G.players.forEach((p,i)=>{if(i!==wi)p.money-=payout;});
@@ -1157,25 +1166,48 @@ function showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove){
   showSc('endhand');
   const winner=G.players[wi];
   document.getElementById('eh-title').textContent=`${winner.name} goes out!${isBagel?' — BAGEL! 🥯':isDream?' — DREAM! ✨':''}`;
-  let tags='';
-  if(isBagel) tags+=`<span class="bagel-tag">🥯 Bagel +250pts</span>`;
-  if(isDream) tags+=`<span class="check-tag">✨ Dream check</span>`;
-  if(!hasWilds&&!isBagel&&!isDream) tags+=`<span class="check-tag">✓ No Wilds check</span>`;
-  if(allBelow) tags+=`<span class="check-tag">✓ All Below check</span>`;
-  if(allAbove) tags+=`<span class="check-tag">✓ All Above check</span>`;
 
-  let html=`${tags?`<div style="margin-bottom:0.75rem;">${tags}</div>`:''}
-  <table class="score-table"><thead><tr><th>Player</th><th>On table</th><th>In hand</th><th>Bonus</th><th>Hand total</th><th>Running</th><th>Money</th></tr></thead><tbody>`;
-  hs.forEach(h=>{html+=`<tr>
-    <td><strong>${h.player.name}</strong>${h.player===winner?' 🏆':''}</td>
-    <td style="color:#2e7d32;">+${h.table}</td>
-    <td style="color:${h.penalty<0?'#c0392b':'#2e7d32'};">${h.penalty}</td>
-    <td style="color:#2e7d32;">+${h.bonus}</td>
-    <td><strong>${h.total>=0?'+':''}${h.total}</strong></td>
-    <td><strong>${h.player.points}</strong></td>
-    <td style="color:${h.player.money>=0?'#2e7d32':'#c0392b'};">${h.player.money>=0?'+':''}${h.player.money.toFixed(1)}¢</td>
-  </tr>`;});
+  // Collect checks earned this hand by winner
+  const handNum=G.hand+1;
+  const checksThisHand=winner.checks.filter(c=>c.hand===handNum).map(c=>c.type);
+
+  let html=`<table class="score-table">
+    <thead><tr><th>Player</th><th>On table</th><th>In hand</th><th>+Out</th><th>Hand score</th><th>Running</th><th>Money</th></tr></thead><tbody>`;
+
+  hs.forEach(h=>{
+    const isWinner=h.player===winner;
+    // Format hand total — bagel gets a circle, dream gets a check (not a circle)
+    let scoreDisplay;
+    if(isWinner&&isBagel){
+      scoreDisplay=`<span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;border:2px solid #1565c0;font-weight:700;font-size:14px;color:#1565c0;">${h.total>=0?'+':''}${h.total}</span>`;
+    } else {
+      scoreDisplay=`<strong>${h.total>=0?'+':''}${h.total}</strong>`;
+    }
+    // Checks shown as small ticks next to the score (dream is a check too)
+    let checkDisplay='';
+    if(isWinner&&checksThisHand.length>0){
+      checkDisplay=checksThisHand.map(c=>`<span class="check-tag" style="font-size:10px;margin-left:2px;" title="${c}">✓</span>`).join('');
+    }
+    html+=`<tr>
+      <td><strong>${h.player.name}</strong>${isWinner?' 🏆':''}</td>
+      <td style="color:#2e7d32;">+${h.table}</td>
+      <td style="color:${h.penalty<0?'#c0392b':'#2e7d32'};">${h.penalty}</td>
+      <td style="color:#2e7d32;">+${h.bonus}</td>
+      <td>${scoreDisplay}${checkDisplay}</td>
+      <td><strong>${h.player.points}</strong></td>
+      <td style="color:${h.player.money>=0?'#2e7d32':'#c0392b'};">${h.player.money>=0?'+':''}${h.player.money.toFixed(1)}¢</td>
+    </tr>`;
+  });
   html+='</tbody></table>';
+
+  // Legend for checks and bagel
+  if(checksThisHand.length>0||isBagel){
+    html+=`<div style="margin-top:0.75rem;font-size:12px;color:#666;">`;
+    if(isBagel) html+=`<span class="bagel-tag">⊙ Bagel = +250pts at final tally</span> `;
+    checksThisHand.forEach(c=>html+=`<span class="check-tag">✓ ${c} = +100pts at final tally</span> `);
+    html+=`</div>`;
+  }
+
   if(G.players.some(p=>p.points>=1000)) html+=`<div class="status-bar" style="margin-top:1rem;">A player has reached 1,000 points — the game can end!</div>`;
   document.getElementById('eh-content').innerHTML=html;
   G.dealerIdx=wi;G.hand++;
@@ -1215,7 +1247,7 @@ function restartHand(){
     p.checks=p.checks.filter(c=>c.hand!==handNum);
     p.bagels=p.bagels.filter(b=>b.hand!==handNum);
   });
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   cm('m-score');
   // Re-deal from saved deck, skip cut screen
@@ -1253,8 +1285,17 @@ function showScores(){
       html+=`<tr>
         <td>${entry.handNum}</td>
         <td>${entry.winner}${entry.isBagel?' 🥯':entry.isDream?' ✨':''}</td>
-        <td>${entry.checks.map(c=>`<span class="check-tag" style="font-size:10px;">${c}</span>`).join('')||'—'}</td>
-        ${entry.scores.map(s=>`<td style="color:${s.total>=0?'#2e7d32':'#c0392b'};">${s.total>=0?'+':''}${s.total}<br><span style="color:#666;font-size:11px;">${s.running}pts</span></td>`).join('')}
+        <td>${entry.checks.map(c=>`<span class="check-tag" style="font-size:10px;">✓</span>`).join('')||'—'}</td>
+        ${entry.scores.map(s=>{
+          const isWinner=s.name===entry.winner;
+          const circled=isWinner&&entry.isBagel;
+          const scoreStr=`${s.total>=0?'+':''}${s.total}`;
+          const scoreEl=circled
+            ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;border:2px solid #1565c0;font-size:11px;font-weight:700;color:#1565c0;">${scoreStr}</span>`
+            : `<span style="color:${s.total>=0?'#2e7d32':'#c0392b'};">${scoreStr}</span>`;
+          const checksEl=isWinner&&entry.checks.length?entry.checks.map(()=>`<span class="check-tag" style="font-size:9px;padding:1px 4px;">✓</span>`).join(''):'';
+          return`<td>${scoreEl}${checksEl}<br><span style="color:#666;font-size:11px;">${s.running}pts</span></td>`;
+        }).join('')}
       </tr>`;
     });
     html+=`</tbody></table></div>`;
