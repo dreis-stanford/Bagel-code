@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bagel — Card Game</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f0; color: #111; min-height: 100vh; }
+.screen { display: none; padding: 1.5rem; max-width: 860px; margin: 0 auto; }
+.screen.active { display: block; }
+h2 { font-size: 18px; font-weight: 500; margin-bottom: 0.75rem; }
+h3 { font-size: 16px; font-weight: 500; margin-bottom: 0.5rem; }
+p { font-size: 14px; color: #666; line-height: 1.6; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: 0.5px solid rgba(0,0,0,0.3); border-radius: 8px; background: #fff; color: #111; font-size: 14px; cursor: pointer; transition: background 0.15s; }
+.btn:hover { background: #f0f0ec; }
+.btn:active { transform: scale(0.98); }
+.btn.primary { background: #2E4057; color: #fff; border-color: #2E4057; }
+.btn.primary:hover { background: #3a5070; }
+.btn.danger { background: #c0392b; color: #fff; border-color: #c0392b; }
+.btn.small { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.card-el { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 52px; height: 76px; border: 1px solid #ccc; border-radius: 6px; background: #fff; font-weight: 500; cursor: pointer; user-select: none; transition: transform 0.1s, box-shadow 0.1s; flex-shrink: 0; }
+.card-el:hover { transform: translateY(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.card-el.selected { transform: translateY(-8px); box-shadow: 0 6px 16px rgba(0,0,0,0.2); border-color: #2E4057; border-width: 2px; }
+.card-el.red { color: #c0392b; }
+.card-el.black { color: #111; }
+.card-el.back { background: #2E4057; border-color: #1a2d40; }
+.card-el.special-wild { background: #fff8e1; border-color: #f39c12; }
+.card-el.special-qs { background: #fce4ec; border-color: #c0392b; }
+.hand-area { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; background: #f0f0ec; border-radius: 12px; min-height: 96px; border: 0.5px solid rgba(0,0,0,0.15); }
+.meld-group { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; background: #fff; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.15); min-height: 60px; align-items: center; }
+.pile-area { display: flex; gap: 24px; align-items: flex-start; margin: 0.75rem 0; }
+.pile-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pile-slot span { font-size: 12px; color: #666; }
+.player-strip { background: #fff; border-radius: 12px; border: 0.5px solid rgba(0,0,0,0.15); padding: 0.75rem 1rem; }
+.score-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.score-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(0,0,0,0.15); font-weight: 500; font-size: 12px; color: #666; }
+.score-table td { padding: 6px 8px; border-bottom: 0.5px solid rgba(0,0,0,0.12); }
+.status-bar { background: #e3f2fd; color: #1565c0; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 0.75rem; }
+.warning-bar { background: #fff8e1; color: #e65100; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 0.75rem; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; border-radius: 12px; padding: 1.5rem; max-width: 500px; width: 92%; max-height: 85vh; overflow-y: auto; }
+input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3); border-radius: 8px; font-size: 14px; background: #fff; color: #111; width: 100%; margin-bottom: 0.5rem; }
+.flex { display: flex; } .gap-8 { gap: 8px; } .wrap { flex-wrap: wrap; } .center { align-items: center; } .between { justify-content: space-between; }
+.mt-1 { margin-top: 1rem; } .mt-half { margin-top: 0.5rem; } .mb-1 { margin-bottom: 1rem; } .mb-half { margin-bottom: 0.5rem; }
+.divider { height: 0.5px; background: rgba(0,0,0,0.12); margin: 1rem 0; }
+.muted { color: #666; font-size: 13px; }
+#screen-handoff { padding: 0; }
+.handoff-cover { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1a2d40; color: #fff; text-align: center; padding: 2rem; }
+.handoff-cover .big-name { font-size: 36px; font-weight: 500; margin-bottom: 0.5rem; }
+.handoff-cover .sub { font-size: 15px; opacity: 0.6; margin-bottom: 2rem; }
+.handoff-cover .tap-btn { background: #fff; color: #1a2d40; border: none; border-radius: 12px; padding: 16px 40px; font-size: 18px; font-weight: 500; cursor: pointer; }
+.handoff-cover .tap-btn:active { transform: scale(0.97); }
+.handoff-cover .table-summary { background: rgba(255,255,255,0.08); border-radius: 12px; padding: 1rem 1.5rem; margin-bottom: 2rem; width: 100%; max-width: 420px; text-align: left; }
+.handoff-cover .table-summary .row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; border-bottom: 0.5px solid rgba(255,255,255,0.1); }
+.handoff-cover .table-summary .row:last-child { border-bottom: none; }
+.pickup-step { background: #f0f0ec; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px; }
+.pickup-step.active { background: #e3f2fd; border: 1px solid #90caf9; }
+.pickup-step.done { background: #e8f5e9; border: 1px solid #a5d6a7; }
+.nat-card { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 52px; height: 76px; border: 2px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; flex-shrink: 0; transition: border-color 0.1s, transform 0.1s; font-weight: 500; }
+.nat-card.picked { border-color: #2e7d32; transform: translateY(-6px); box-shadow: 0 4px 12px rgba(46,125,50,0.2); }
+.nat-card.red { color: #c0392b; }
+.nat-card.black { color: #111; }
+.nat-card.special-wild { background: #fff8e1; }
+.nat-card.special-qs { background: #fce4ec; }
+.check-tag { background: #e8f5e9; color: #2e7d32; padding: 3px 8px; border-radius: 10px; font-size: 12px; margin: 2px; display: inline-block; }
+.bagel-tag { background: #e3f2fd; color: #1565c0; padding: 3px 8px; border-radius: 10px; font-size: 12px; margin: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="screen-setup" class="screen active">
+  <div style="text-align:center; padding: 2rem 0 1rem;">
+    <div style="font-size: 52px; font-weight: 700; letter-spacing: -2px; color: #2E4057;">BAGEL</div>
+    <p>The family card game</p>
+  </div>
+  <div style="background:#fff; border-radius:12px; border:0.5px solid rgba(0,0,0,0.15); padding:1.5rem; max-width:400px; margin:0 auto;">
+    <h3>Number of players</h3>
+    <div class="flex gap-8 wrap mt-half" id="pc-btns">
+      <button class="btn" onclick="setPC(2)">2</button>
+      <button class="btn" onclick="setPC(3)">3</button>
+      <button class="btn primary" onclick="setPC(4)">4</button>
+      <button class="btn" onclick="setPC(5)">5</button>
+    </div>
+    <div class="divider"></div>
+    <h3>Player names</h3>
+    <div id="pname-inputs"></div>
+    <div class="divider"></div>
+    <h3>Options</h3>
+    <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;margin-bottom:8px;">
+      <input type="checkbox" id="opt-pc"> Perfect cut bonus (optional)
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+      <input type="checkbox" id="opt-rm"> Round money to nearest 500 pts
+    </label>
+    <div class="divider"></div>
+    <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
+  </div>
+</div>
+
+<!-- HANDOFF -->
+<div id="screen-handoff" class="screen">
+  <div class="handoff-cover">
+    <div class="big-name" id="ho-name"></div>
+    <div class="sub" id="ho-sub"></div>
+    <div class="table-summary" id="ho-summary"></div>
+    <button class="tap-btn" id="ho-btn" onclick="revealTurn()"></button>
+  </div>
+</div>
+
+<!-- CUT -->
+<div id="screen-cut" class="screen">
+  <h2 id="cut-title"></h2>
+  <div id="cut-content"></div>
+</div>
+
+<!-- GAME -->
+<div id="screen-game" class="screen">
+  <div class="flex between center mb-1">
+    <div>
+      <div style="font-size:18px;font-weight:500;" id="g-hand"></div>
+      <div class="muted" id="g-turn"></div>
+    </div>
+    <button class="btn small" onclick="showScores()">Scores</button>
+  </div>
+  <div id="status-bar" class="status-bar" style="display:none;"></div>
+  <div id="warn-bar" class="warning-bar" style="display:none;"></div>
+  <div id="other-players" class="flex gap-8 wrap mb-1"></div>
+  <div class="pile-area">
+    <div class="pile-slot">
+      <span>Draw pile</span>
+      <div class="card-el back" onclick="drawCard()" style="width:52px;height:76px;display:flex;align-items:center;justify-content:center;">
+        <div style="color:rgba(255,255,255,0.5);font-size:10px;text-align:center;">tap<br>draw</div>
+      </div>
+      <span id="draw-ct"></span>
+    </div>
+    <div class="pile-slot">
+      <span>Discard pile</span>
+      <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:52px;min-height:76px;"></div>
+      <span id="disc-ct"></span>
+    </div>
+  </div>
+  <div id="all-melds" style="margin-bottom:0.75rem;"></div>
+  <div class="flex gap-8 wrap mb-half">
+    <button class="btn primary" id="btn-meld" onclick="openMeld()" disabled>Meld selected</button>
+    <button class="btn" id="btn-add" onclick="openAdd()" disabled>Add to meld</button>
+    <button class="btn" id="btn-redeem" onclick="openRedeem()" disabled>Redeem joker</button>
+    <button class="btn danger" id="btn-disc" onclick="doDiscard()" disabled>Discard</button>
+  </div>
+  <div class="flex between center mb-half">
+    <h3 id="hand-lbl"></h3>
+    <div class="flex gap-8 center">
+      <span id="decl-st" style="font-size:12px;color:#666;"></span>
+      <button class="btn small" id="btn-decl" onclick="openDeclare()" style="display:none;">Declare</button>
+      <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Undeclare</button>
+    </div>
+  </div>
+  <div class="hand-area" id="cur-hand"></div>
+</div>
+
+<!-- END HAND -->
+<div id="screen-endhand" class="screen">
+  <h2 id="eh-title"></h2>
+  <div id="eh-content"></div>
+  <div class="mt-1 flex gap-8">
+    <button class="btn primary" onclick="nextHand()">Deal next hand</button>
+    <button class="btn" onclick="showFinal()">End game &amp; tally</button>
+  </div>
+</div>
+
+<!-- FINAL -->
+<div id="screen-final" class="screen">
+  <h2>Final scores — game over</h2>
+  <div id="final-content"></div>
+  <div class="mt-1"><button class="btn primary" onclick="location.reload()">New game</button></div>
+</div>
+
+<!-- SCORE MODAL -->
+<div id="m-score" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1"><h2>Scoreboard</h2><button class="btn small" onclick="cm('m-score')">Close</button></div>
+    <div id="score-content"></div>
+  </div>
+</div>
+
+<!-- PICKUP MODAL -->
+<div id="m-pickup" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1">
+      <h2>Pick up the pile</h2>
+      <button class="btn small" onclick="cm('m-pickup')">Cancel</button>
+    </div>
+    <div id="pu-steps" style="margin-bottom:1rem;"></div>
+    <div id="pu-content"></div>
+  </div>
+</div>
+
+<!-- MELD MODAL -->
+<div id="m-meld" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1"><h2>Create meld</h2><button class="btn small" onclick="cm('m-meld')">Cancel</button></div>
+    <div id="meld-cards" class="flex gap-8 wrap mb-1"></div>
+    <div id="meld-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
+    <div id="jdecl-area" style="display:none;background:#f0f0ec;border-radius:8px;padding:10px;margin-bottom:0.75rem;">
+      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Declare joker(s)</div>
+      <div id="jdecl-inputs"></div>
+    </div>
+    <button class="btn primary" style="width:100%" onclick="confirmMeld()">Confirm meld</button>
+  </div>
+</div>
+
+<!-- ADD MODAL -->
+<div id="m-add" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1"><h2>Add to meld</h2><button class="btn small" onclick="cm('m-add')">Cancel</button></div>
+    <div id="add-opts"></div>
+    <div id="add-err" style="font-size:13px;color:#c0392b;min-height:18px;"></div>
+  </div>
+</div>
+
+<!-- REDEEM MODAL -->
+<div id="m-redeem" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1"><h2>Redeem a joker</h2><button class="btn small" onclick="cm('m-redeem')">Cancel</button></div>
+    <div id="redeem-opts"></div>
+    <div id="redeem-err" style="font-size:13px;color:#c0392b;min-height:18px;"></div>
+  </div>
+</div>
+
+<!-- DECLARE MODAL -->
+<div id="m-decl" class="modal-overlay" style="display:none;">
+  <div class="modal">
+    <div class="flex between center mb-1"><h2>Declare</h2><button class="btn small" onclick="cm('m-decl')">Cancel</button></div>
+    <p style="font-size:13px;margin-bottom:0.75rem;" id="decl-desc"></p>
+    <select id="decl-sel" style="margin-bottom:0.75rem;"></select>
+    <button class="btn primary" style="width:100%" onclick="confirmDecl()">Confirm</button>
+  </div>
+</div>
+
+<script>
+const SUITS=['♠','♥','♦','♣'],RANKS=['A','K','Q','J','10','9','8','7','6','5','4','3'];
+const RO={'A':14,'K':13,'Q':12,'J':11,'10':10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3};
+let G={},PU={};
+
+function createDeck(){
+  let d=[],id=0;
+  for(let i=0;i<2;i++){
+    for(let s of SUITS){
+      for(let r of RANKS) d.push({id:id++,rank:r,suit:s,wild:false,joker:false,qs:r==='Q'&&s==='♠',declaredAs:null});
+      d.push({id:id++,rank:'2',suit:s,wild:true,joker:false,qs:false,declaredAs:null});
+    }
+    d.push({id:id++,rank:'JK',suit:'',wild:true,joker:true,qs:false,declaredAs:null});
+  }
+  return d;
+}
+function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+function isSp(c){return c.wild||c.qs;}
+function cPts(c,ih){
+  if(c.joker)return ih?-200:100;
+  if(c.qs)return ih?-100:50;
+  if(c.wild)return ih?-20:(c.declaredAs?rPts(c.declaredAs.replace(/[♠♥♦♣]/g,'')):5);
+  const v=rPts(c.rank);return ih?-v:v;
+}
+function rPts(r){if(r==='A')return 20;if(['K','Q','J','10','9','8'].includes(r))return 10;return 5;}
+function cCol(c){return(c.suit==='♥'||c.suit==='♦')?'red':'black';}
+function cLbl(c){if(c.joker)return'★JK';if(c.wild)return`2${c.suit}`;return`${c.rank}${c.suit}`;}
+
+function rc(c,sel,fn,sm){
+  const w=sm?'38px':'52px',h=sm?'56px':'76px',rs=sm?'11px':'15px',ss=sm?'10px':'14px';
+  let cls=`card-el ${cCol(c)}`;
+  if(sel)cls+=' selected';
+  if(c.joker||c.wild)cls+=' special-wild';
+  if(c.qs)cls+=' special-qs';
+  return`<div class="${cls}" style="width:${w};height:${h};" ${fn?`onclick="${fn}(${c.id})"`:''}  ${c.declaredAs?`title="${c.declaredAs}"`:''}>
+    <div style="font-size:${rs};font-weight:700;">${c.joker?'★':c.rank}</div>
+    <div style="font-size:${ss};">${c.suit}</div></div>`;
+}
+
+function setPC(n){
+  G.playerCount=n;
+  document.querySelectorAll('#pc-btns .btn').forEach(b=>b.classList.toggle('primary',+b.textContent===n));
+  document.getElementById('pname-inputs').innerHTML=Array.from({length:n},(_,i)=>`<input type="text" id="pn${i}" value="Player ${i+1}">`).join('');
+}
+
+function startGame(){
+  const n=G.playerCount||4;
+  const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
+  G={
+    playerCount:n,
+    players:names.map((name,i)=>({name,id:i,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null})),
+    drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
+    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
+    handFirstPlayer:1,swapFirst:null,reordering:false,
+    optPC:document.getElementById('opt-pc').checked,
+    optRM:document.getElementById('opt-rm').checked,
+    log:[],       // hand history entries
+    snapshot:null // state at start of current hand (for undo/restart)
+  };
+  dealHand();
+}
+
+function snapshotPlayers(){
+  return G.players.map(p=>({
+    points:p.points, money:p.money,
+    checks:[...p.checks], bagels:[...p.bagels]
+  }));
+}
+function restoreSnapshot(snap){
+  G.players.forEach((p,i)=>{
+    p.points=snap[i].points; p.money=snap[i].money;
+    p.checks=[...snap[i].checks]; p.bagels=[...snap[i].bagels];
+  });
+}
+
+function dealHand(){
+  G.snapshot=snapshotPlayers(); // save state before this hand
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;});
+  G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
+  G.savedDeck=null; // will be saved after cut
+  showCut(shuffle(createDeck()));
+}
+
+function showCut(deck){
+  showSc('cut');
+  G.deck=deck;
+  const n=G.players.length,ci=(G.dealerIdx+n-1)%n,cutter=G.players[ci];
+  G.cutterIdx=ci;
+  // Default cut point roughly in the middle, but cutter controls it
+  G.cutSliderVal=Math.round(deck.length/2);
+  document.getElementById('cut-title').textContent=`Hand ${G.hand+1} — The Cut`;
+  document.getElementById('cut-content').innerHTML=`
+    <p style="margin-bottom:1rem;">${cutter.name}, slide to choose where to cut the deck, then tap "Cut here".</p>
+    <div style="background:#fff;border-radius:12px;border:0.5px solid rgba(0,0,0,0.15);padding:1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:1rem;">
+        <div style="flex:1;position:relative;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-bottom:4px;">
+            <span>Top of deck</span><span>Bottom of deck</span>
+          </div>
+          <input type="range" id="cut-slider" min="10" max="${deck.length-10}" value="${G.cutSliderVal}" oninput="updateCutSlider(this.value)" style="width:100%;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-top:6px;">
+            <span id="cut-above-lbl">Above cut: —</span>
+            <span id="cut-below-lbl">Below cut: —</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:flex-end;">
+        <div style="text-align:center;">
+          <div style="font-size:11px;color:#666;margin-bottom:4px;">Top portion<br>(taken away)</div>
+          <div id="cut-top-vis" style="background:#2E4057;border-radius:4px;width:52px;margin:0 auto;transition:height 0.15s;"></div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:11px;color:#666;margin-bottom:4px;">Bottom portion<br>(stays on table)</div>
+          <div id="cut-bot-vis" style="background:#5a7a9a;border-radius:4px;width:52px;margin:0 auto;transition:height 0.15s;"></div>
+        </div>
+        <div id="cut-exact-badge" style="display:none;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;font-size:13px;color:#2e7d32;flex:1;">
+          ✓ Exact cut!
+        </div>
+      </div>
+    </div>
+    <button class="btn primary" onclick="confirmCut()">Cut here</button>`;
+  updateCutSlider(G.cutSliderVal);
+}
+
+function updateCutSlider(val){
+  G.cutSliderVal=+val;
+  const deck=G.deck,n=G.players.length,exact=13*n+1;
+  const above=G.cutSliderVal,below=deck.length-G.cutSliderVal;
+  const maxH=120,scale=deck.length;
+  document.getElementById('cut-top-vis').style.height=Math.round(above/scale*maxH)+'px';
+  document.getElementById('cut-bot-vis').style.height=Math.round(below/scale*maxH)+'px';
+  // Show vague labels, not exact counts
+  const abovePct=Math.round(above/deck.length*100);
+  document.getElementById('cut-above-lbl').textContent=`Above cut: ~${abovePct}%`;
+  document.getElementById('cut-below-lbl').textContent=`Below cut: ~${100-abovePct}%`;
+  const isExact=above===exact;
+  document.getElementById('cut-exact-badge').style.display=isExact&&G.optPC?'block':'none';
+}
+
+function confirmCut(){
+  const deck=G.deck,n=G.players.length,ci=G.cutterIdx,cutter=G.players[ci],exact=13*n+1;
+  const cp=G.cutSliderVal;
+  const cutPart=deck.slice(0,cp),rem=deck.slice(cp);
+  let kept=[],botN=null,pi=cutPart.length-1;
+  while(pi>=0){if(isSp(cutPart[pi])){kept.push(cutPart[pi]);pi--;}else{botN=cutPart[pi];break;}}
+  G.keptByCutter=kept;G.cutterBot=botN;G.perfectCut=(cp===exact);G.cutPart=cutPart;G.rem=rem;
+  if(G.perfectCut&&G.optPC) cutter.checks.push({hand:G.hand+1,type:'Perfect Cut'});
+
+  let html=`<p style="margin-bottom:0.75rem;">${cutter.name} cuts the deck and peeks at the bottom card.</p>
+  <div class="player-strip mb-1">
+    <div style="font-weight:500;margin-bottom:6px;">${cutter.name} cuts${G.perfectCut?' — exact!':''}</div>`;
+  if(kept.length>0) html+=`<div class="warning-bar">Special card(s) found — kept by ${cutter.name}:</div><div class="flex gap-8 wrap mt-half">${kept.map(c=>rc(c)).join('')}</div>`;
+  if(botN) html+=`<div style="margin-top:10px;"><div style="font-size:13px;font-weight:500;margin-bottom:6px;">Bottom card (only you can see this):</div><div style="display:flex;align-items:center;gap:12px;">${rc(botN)}<span style="font-size:13px;color:#666;">This card stays at the bottom of the draw pile — don&#x2019;t show anyone.</span></div></div>`;
+  if(G.perfectCut&&G.optPC) html+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:#2e7d32;">✓ Perfect cut! ${cutter.name} earns a Check.</div>`;
+  html+=`</div><button class="btn primary" onclick="completeCut()">Continue to deal</button>`;
+  document.getElementById('cut-content').innerHTML=html;
+}
+
+function completeCut(){
+  const n=G.players.length,ci=G.cutterIdx,fi=(G.dealerIdx+1)%n;
+  G.handFirstPlayer=fi;
+  const kIds=new Set(G.keptByCutter.map(c=>c.id)),botId=G.cutterBot?.id;
+  let pool=[...G.cutPart.filter(c=>!kIds.has(c.id)&&c.id!==botId),...G.rem];
+  pool=shuffle(pool);
+  if(botId) pool.push(G.cutterBot);
+  G.savedDeck=[...pool]; // save for hand restart
+  G.players[ci].hand=[...G.keptByCutter];
+  for(let pi=0;pi<n;pi++){
+    const idx=(fi+pi)%n,target=(idx===fi?14:13)-(idx===ci?G.keptByCutter.length:0);
+    for(let j=0;j<target&&pool.length>0;j++) G.players[idx].hand.push(pool.shift());
+  }
+  G.drawPile=pool;G.discardPile=[];G.currentIdx=fi;G.phase='first-discard';
+  showHandoff();
+}
+
+function showHandoff(){
+  const cp=G.players[G.currentIdx];
+  document.getElementById('ho-name').textContent=cp.name;
+  document.getElementById('ho-sub').textContent=G.phase==='first-discard'&&G.currentIdx===G.handFirstPlayer?'You have 14 cards — discard one to start':phLbl();
+  document.getElementById('ho-btn').textContent=`I'm ${cp.name} — show my hand`;
+  let s=`<div style="font-size:11px;opacity:0.5;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Table state</div>`;
+  G.players.forEach(p=>{
+    const mp=p.melds.reduce((s,m)=>s+mPts(m),0);
+    s+=`<div class="row"><span>${p.name}${p.id===G.dealerIdx?' ✦':''}</span><span>${p.hand.length} cards · ${mp>0?mp+'pts on table':'no melds'}${p.declared?` · declared (${p.declaredCount})`:''}</span></div>`;
+  });
+  s+=`<div class="row"><span>Draw pile</span><span>${G.drawPile.length} cards</span></div>`;
+  const top=G.discardPile[G.discardPile.length-1];
+  s+=`<div class="row"><span>Discard pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
+  document.getElementById('ho-summary').innerHTML=s;
+  showSc('handoff');
+}
+
+function revealTurn(){
+  showSc('game');G.sel=[];updateGame();
+  if(G.phase==='first-discard') setSt('You have 14 cards — select one to discard before play begins.');
+  else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
+}
+
+function phLbl(){
+  if(G.phase==='first-discard') return 'Discard one card to begin';
+  if(G.phase==='draw') return 'Draw or pick up pile';
+  if(G.phase==='play') return 'Meld, redeem jokers, then discard';
+  return'';
+}
+
+function updateGame(){
+  const cp=G.players[G.currentIdx];
+  document.getElementById('g-hand').textContent=`Hand ${G.hand+1}`;
+  document.getElementById('g-turn').textContent=`${cp.name}'s turn`;
+  document.getElementById('hand-lbl').textContent=`Your hand (${cp.hand.length} cards)`;
+  renderOthers();renderPiles();renderAllMelds();renderHand();updateBtns();updateDeclUI();
+}
+
+function renderOthers(){
+  document.getElementById('other-players').innerHTML=G.players.filter((_,i)=>i!==G.currentIdx).map(p=>`
+    <div class="player-strip" style="flex:1;min-width:140px;">
+      <div class="flex between center"><div style="font-weight:500;font-size:13px;">${p.name}${p.id===G.dealerIdx?' ✦':''}</div><div class="muted">${p.hand.length} cards</div></div>
+      <div style="font-size:11px;color:#666;margin-top:2px;">${p.points}pts · ${p.money>=0?'+':''}${p.money.toFixed(1)}¢${p.declared?` · <span style="color:#e65100;">declared (${p.declaredCount})</span>`:''}</div>
+    </div>`).join('');
+}
+
+function renderPiles(){
+  document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
+  const top=G.discardPile[G.discardPile.length-1];
+  document.getElementById('disc-top').innerHTML=top?rc(top):
+    `<div class="card-el" style="opacity:0.25;width:52px;height:76px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
+  document.getElementById('disc-ct').textContent=`${G.discardPile.length} cards`;
+}
+
+function renderAllMelds(){
+  document.getElementById('all-melds').innerHTML=G.players.filter(p=>p.melds.length>0).map(p=>`
+    <div style="margin-bottom:8px;">
+      <div style="font-size:11px;color:#666;margin-bottom:4px;">${p.id===G.currentIdx?'Your':p.name+"'s"} melds</div>
+      <div class="flex gap-8 wrap">${p.melds.map(m=>`<div class="meld-group">${m.cards.map(c=>rc(c)).join('')}<span style="font-size:11px;color:#666;padding:0 4px;">${mPts(m)}pts</span></div>`).join('')}</div>
+    </div>`).join('');
+}
+
+function renderHand(){
+  const cp=G.players[G.currentIdx];
+  // Use custom order if set, otherwise auto-sort
+  if(!cp.handOrder||cp.handOrder.length!==cp.hand.length){
+    cp.handOrder=[...cp.hand].sort((a,b)=>{
+      if(a.joker!==b.joker)return a.joker?-1:1;
+      if(a.wild!==b.wild)return a.wild?-1:1;
+      if(a.qs!==b.qs)return a.qs?-1:1;
+      const so=['♠','♥','♦','♣'];
+      if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
+      return(RO[b.rank]||0)-(RO[a.rank]||0);
+    }).map(c=>c.id);
+    // Filter to only ids still in hand
+    cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+  }
+  const ordered=cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  const reorder=G.reordering;
+  let hhtml=`<div style='margin-bottom:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;'>
+    <button class='btn small' onclick='toggleReorder()' style='${reorder?"background:#e3f2fd;border-color:#90caf9;":""}'>
+      ${reorder?"✕ Done reordering":"⇄ Reorder cards"}
+    </button>
+    ${reorder?"<button class='btn small' onclick='resetHandOrder()'>Reset to auto-sort</button>":""}
+    ${reorder?"<span style='font-size:11px;color:#666;'>Drag cards to reposition</span>":""}
+  </div>
+  <div id='hand-cards' style='display:flex;flex-wrap:wrap;gap:6px;width:100%;'>`;
+  ordered.forEach(c=>{
+    const isSel=G.sel.includes(c.id);
+    let cls=`card-el ${cCol(c)}`;
+    if(isSel)cls+=' selected';
+    if(c.joker||c.wild)cls+=' special-wild';
+    if(c.qs)cls+=' special-qs';
+    if(reorder){
+      hhtml+=`<div class='${cls}' id='hc-${c.id}' data-id='${c.id}'
+        style='width:52px;height:76px;cursor:grab;touch-action:none;'
+        draggable='true'
+        ondragstart='hdragStart(event,${c.id})'
+        ondragover='hdragOver(event,${c.id})'
+        ondragleave='hdragLeave(event)'
+        ondrop='hdrop(event,${c.id})'
+        ondragend='hdragEnd()'
+        ontouchstart='htouchStart(event,${c.id})'
+        ontouchmove='htouchMove(event)'
+        ontouchend='htouchEnd(event,${c.id})'
+        ${c.declaredAs?`title='${c.declaredAs}'`:''}>
+        <div style='font-size:15px;font-weight:700;'>${c.joker?'★':c.rank}</div>
+        <div style='font-size:14px;'>${c.suit}</div>
+      </div>`;
+    } else {
+      hhtml+=`<div class='${cls}' id='hc-${c.id}' data-id='${c.id}'
+        style='width:52px;height:76px;'
+        onclick='tSel(${c.id})'
+        ${c.declaredAs?`title='${c.declaredAs}'`:''}>
+        <div style='font-size:15px;font-weight:700;'>${c.joker?'★':c.rank}</div>
+        <div style='font-size:14px;'>${c.suit}</div>
+      </div>`;
+    }
+  });
+  hhtml+=`</div>`;
+  document.getElementById('cur-hand').innerHTML=hhtml||`<div class='muted' style='padding:8px;'>No cards in hand</div>`;
+}
+
+function toggleReorder(){G.reordering=!G.reordering;G.sel=[];renderHand();updateBtns();}
+function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;G.reordering=false;renderHand();}
+
+let _dragId=null,_dragOver=null,_touchDragId=null,_touchGhost=null;
+
+function hdragStart(e,id){
+  _dragId=id;e.dataTransfer.effectAllowed='move';
+  setTimeout(()=>{const el=document.getElementById(`hc-${id}`);if(el)el.style.opacity='0.35';},0);
+}
+function hdragOver(e,targetId){
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  if(_dragOver!==targetId){
+    document.querySelectorAll('[id^="hc-"]').forEach(el=>el.style.borderLeft='');
+    _dragOver=targetId;
+    const el=document.getElementById(`hc-${targetId}`);
+    if(el&&targetId!==_dragId)el.style.borderLeft='3px solid #2E4057';
+  }
+}
+function hdragLeave(e){e.currentTarget.style.borderLeft='';}
+function hdrop(e,targetId){
+  e.preventDefault();
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>el.style.borderLeft='');
+  if(_dragId!==null&&_dragId!==targetId)reorderInsert(_dragId,targetId);
+  _dragId=null;_dragOver=null;
+}
+function hdragEnd(){
+  _dragId=null;_dragOver=null;
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>{el.style.opacity='';el.style.borderLeft='';});
+}
+function htouchStart(e,id){
+  _touchDragId=id;
+  const el=document.getElementById(`hc-${id}`),rect=el.getBoundingClientRect();
+  _touchGhost=el.cloneNode(true);
+  _touchGhost.style.cssText=`position:fixed;pointer-events:none;z-index:999;opacity:0.8;width:52px;height:76px;left:${rect.left}px;top:${rect.top}px;border-radius:6px;`;
+  document.body.appendChild(_touchGhost);
+  el.style.opacity='0.3';
+  e.preventDefault();
+}
+function htouchMove(e){
+  if(!_touchGhost)return;
+  const t=e.touches[0];
+  _touchGhost.style.left=(t.clientX-26)+'px';
+  _touchGhost.style.top=(t.clientY-38)+'px';
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>el.style.borderLeft='');
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>{
+    if(+el.dataset.id===_touchDragId)return;
+    const r=el.getBoundingClientRect();
+    if(t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom)
+      el.style.borderLeft='3px solid #2E4057';
+  });
+  e.preventDefault();
+}
+function htouchEnd(e,srcId){
+  if(!_touchGhost)return;
+  const t=e.changedTouches[0];
+  _touchGhost.remove();_touchGhost=null;
+  const src=document.getElementById(`hc-${srcId}`);
+  if(src)src.style.opacity='';
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>el.style.borderLeft='');
+  let targetId=null;
+  document.querySelectorAll('[id^="hc-"]').forEach(el=>{
+    if(+el.dataset.id===srcId)return;
+    const r=el.getBoundingClientRect();
+    if(t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom)
+      targetId=+el.dataset.id;
+  });
+  _touchDragId=null;
+  if(targetId!==null)reorderInsert(srcId,targetId);
+  else renderHand();
+}
+function reorderInsert(dragId,targetId){
+  const cp=G.players[G.currentIdx],order=cp.handOrder;
+  const from=order.indexOf(dragId),to=order.indexOf(targetId);
+  if(from<0||to<0)return;
+  order.splice(from,1);order.splice(to,0,dragId);
+  renderHand();
+}
+function mPts(m){return m.cards.reduce((s,c)=>s+cPts(c,false),0);}
+
+function tSel(id){
+  if(G.phase==='draw'){setWarn('Draw a card first.');return;}
+  // first-discard: allow multi-select for melding, but only one at a time for discard
+  const i=G.sel.indexOf(id);if(i>=0)G.sel.splice(i,1);else G.sel.push(id);
+  renderHand();updateBtns();
+}
+
+function updateBtns(){
+  const cp=G.players[G.currentIdx],s=G.sel,canMeld=G.phase==='play'||G.phase==='first-discard',cd=G.phase==='play'||G.phase==='first-discard';
+  const hasJkrs=G.players.some(p=>p.melds.some(m=>m.cards.some(c=>c.joker)));
+  document.getElementById('btn-meld').disabled=!(canMeld&&s.length>=3);
+  document.getElementById('btn-add').disabled=!(canMeld&&s.length>=1&&cp.melds.length>0);
+  document.getElementById('btn-redeem').disabled=!(canMeld&&hasJkrs);
+  document.getElementById('btn-disc').disabled=!(cd&&s.length===1);
+}
+
+function updateDeclUI(){
+  const cp=G.players[G.currentIdx];
+  if(!cp.hasEverMelded){
+    document.getElementById('btn-decl').style.display='none';
+    document.getElementById('btn-undecl').style.display='none';
+    document.getElementById('decl-st').textContent='';return;
+  }
+  document.getElementById('btn-decl').style.display=cp.declared?'none':'inline-flex';
+  document.getElementById('btn-undecl').style.display=cp.declared?'inline-flex':'none';
+  if(cp.declared) document.getElementById('decl-st').textContent=`Declared: ${cp.declaredCount} cards`;
+  else if(cp.hand.length<=4) document.getElementById('decl-st').textContent='⚠ Must declare before discarding!';
+  else document.getElementById('decl-st').textContent='';
+}
+
+function drawCard(){
+  if(G.phase!=='draw'){setWarn('Not your draw phase.');return;}
+  if(!G.drawPile.length){endHandDead();return;}
+  G.players[G.currentIdx].hand.push(G.drawPile.pop());
+  G.drewCard=true;G.phase='play';clearSt();updateGame();
+}
+
+// ── PILE PICKUP ──
+function startPickup(){
+  if(G.phase!=='draw'){setWarn('You can only pick up the pile during your draw phase.');return;}
+  if(!G.discardPile.length){setWarn('The discard pile is empty.');return;}
+  const cp=G.players[G.currentIdx];
+  const top=G.discardPile[G.discardPile.length-1];
+  // All non-wild cards qualify as "naturals" for the 2-natural pickup requirement
+  const naturals=cp.hand.filter(c=>!c.wild);
+  if(naturals.length<2){setWarn('You need at least 2 natural (non-wild) cards in your hand to pick up the pile.');return;}
+  PU={step:1,topCard:top,selNats:[],allNats:naturals};
+  renderPickup();
+  document.getElementById('m-pickup').style.display='flex';
+}
+
+function renderPickup(){
+  document.getElementById('pu-steps').innerHTML=[
+    {label:`Step 1 — Select 2+ naturals from your hand to meld with ${cLbl(PU.topCard)}`,active:PU.step===1,done:PU.step>1},
+    {label:'Step 2 — Confirm pickup',active:PU.step===2,done:false}
+  ].map(s=>`<div class="pickup-step ${s.active?'active':s.done?'done':''}">${s.done?'✓ ':''}${s.label}</div>`).join('');
+
+  if(PU.step===1){
+    document.getElementById('pu-content').innerHTML=`
+      <div style="margin-bottom:0.75rem;">
+        <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Top of discard pile (must be included in meld):</div>
+        <div style="margin-bottom:12px;">${rc(PU.topCard)}</div>
+        <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Select 2+ natural cards from your hand:</div>
+        <div class="flex gap-8 wrap" id="pu-nats">
+          ${PU.allNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
+        </div>
+      </div>
+      <div id="pu-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
+      <button class="btn primary" style="width:100%" onclick="puStep2()">Next →</button>`;
+  } else {
+    const selNatCards=PU.selNats.map(id=>G.players[G.currentIdx].hand.find(c=>c.id===id)).filter(Boolean);
+    document.getElementById('pu-content').innerHTML=`
+      <div style="font-size:13px;margin-bottom:0.75rem;">You will pick up all <strong>${G.discardPile.length} cards</strong> from the discard pile.</div>
+      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Your first meld must include:</div>
+      <div class="flex gap-8 wrap center" style="margin-bottom:1rem;">
+        ${rc(PU.topCard)} <span style="color:#666;font-size:13px;">+</span> ${selNatCards.map(c=>rc(c)).join('')}
+        <span style="font-size:12px;color:#666;align-self:center;">(you can add more when melding)</span>
+      </div>
+      <button class="btn primary" style="width:100%;margin-bottom:8px;" onclick="confirmPickup()">Pick up the pile</button>
+      <button class="btn" style="width:100%" onclick="PU.step=1;renderPickup();">← Back</button>`;
+  }
+}
+
+function natCard(c,picked){
+  let cls=`nat-card ${cCol(c)}`;
+  if(picked)cls+=' picked';
+  if(c.joker||c.wild)cls+=' special-wild';
+  if(c.qs)cls+=' special-qs';
+  return`<div class="${cls}" onclick="toggleNat(${c.id})">
+    <div style="font-size:15px;font-weight:700;">${c.rank}</div>
+    <div style="font-size:14px;">${c.suit}</div></div>`;
+}
+
+function toggleNat(id){
+  const i=PU.selNats.indexOf(id);if(i>=0)PU.selNats.splice(i,1);else PU.selNats.push(id);
+  document.getElementById('pu-nats').innerHTML=PU.allNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('');
+}
+
+function puStep2(){
+  if(PU.selNats.length<2){document.getElementById('pu-err').textContent='Select at least 2 natural cards.';return;}
+  PU.step=2;renderPickup();
+}
+
+function confirmPickup(){
+  const cp=G.players[G.currentIdx],all=[...G.discardPile];
+  G.discardPile=[];all.forEach(c=>cp.hand.push(c));
+  G.drewCard=true;G.phase='play';
+  G.mustMeldTopId=PU.topCard.id;
+  G.mustNaturalIds=new Set(PU.selNats);
+  cm('m-pickup');
+  setSt(`Picked up ${all.length} cards! Select the top card (${cLbl(PU.topCard)}) + your chosen naturals + any extras, then tap "Meld selected".`);
+  updateGame();
+}
+
+function openMeld(){
+  const cp=G.players[G.currentIdx];
+  const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  if(sel.length<3){setWarn('Select at least 3 cards.');return;}
+  document.getElementById('meld-cards').innerHTML=sel.map(c=>rc(c)).join('');
+  document.getElementById('meld-err').textContent='';
+  const jkrs=sel.filter(c=>c.joker);
+  if(jkrs.length){
+    document.getElementById('jdecl-inputs').innerHTML=jkrs.map(j=>`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" style="margin-bottom:0;"></div>`).join('');
+    document.getElementById('jdecl-area').style.display='block';
+  } else document.getElementById('jdecl-area').style.display='none';
+  document.getElementById('m-meld').style.display='flex';
+}
+
+function confirmMeld(){
+  const cp=G.players[G.currentIdx];
+  const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=i.value.trim()||null;});
+
+  if(G.mustMeldTopId!==null){
+    if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
+    const preselInMeld=sel.filter(c=>G.mustNaturalIds?.has(c.id));
+    if(preselInMeld.length<2){document.getElementById('meld-err').textContent='Must include the 2+ naturals you selected during pickup.';return;}
+  }
+
+  const v=valMeld(sel);
+  if(!v.valid){document.getElementById('meld-err').textContent=v.msg;return;}
+
+  cp.melds.push({cards:sel,type:v.type});
+  sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+  G.sel=[];cp.hasEverMelded=true;
+  if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;}
+  cm('m-meld');clearSt();autoDecl();updateGame();
+}
+
+function valMeld(cards){
+  const nat=cards.filter(c=>!c.wild),wld=cards.filter(c=>c.wild);
+  if(wld.length>0&&nat.length<2) return{valid:false,msg:'Needs at least 2 natural cards when using wilds.'};
+  if(trySet(cards)) return{valid:true,type:'set'};
+  const runResult=tryRun(cards); // returns {valid, assignedRanks} or false
+  if(runResult){
+    // Block joker declared as Q♠
+    if(wld.filter(c=>c.joker).some(c=>c.declaredAs==='Q♠'))
+      return{valid:false,msg:'A joker cannot represent the Queen of Spades.'};
+    // Check if any wild was assigned rank 12 in a spades run with no natural Q♠
+    if(runResult.suit==='♠'&&!nat.some(c=>c.qs)){
+      const wildOnQ=runResult.assignedRanks.some(({card,rank})=>card.wild&&rank===12);
+      if(wildOnQ)
+        return{valid:false,msg:'A wild cannot occupy the Queen of Spades position in this spades run. Try reordering the cards to place the wild in a different position.'};
+    }
+    // Assign declaredAs to wilds based on their position in the run
+    runResult.assignedRanks.forEach(({card,rank})=>{
+      if(card.wild){
+        const rankName=Object.keys(RO).find(k=>RO[k]===rank)||rank;
+        card.declaredAs=rankName+(runResult.suit||'');
+      }
+    });
+    return{valid:true,type:'run'};
+  }
+  return{valid:false,msg:'Not a valid set (3–4 same rank) or run (3+ same suit in sequence). Sets max 4; aces high only.'};
+}
+
+function trySet(c){if(c.length<3||c.length>4)return false;return new Set(c.filter(x=>!x.wild).map(x=>x.rank)).size===1;}
+
+function tryRun(cards){
+  // Returns {valid:true, suit, assignedRanks:[{card,rank}]} or false
+  // card ORDER defines wild positions — first card = lowest rank in run
+  if(cards.length<3)return false;
+  const nat=cards.filter(c=>!c.wild);
+  if(!nat.length)return false;
+  const suits=new Set(nat.map(c=>c.suit));
+  if(suits.size>1)return false;
+  const suit=nat[0].suit;
+
+  // Determine the run's rank sequence from the ordered card list
+  // Strategy: anchor on the natural cards' ranks, assign consecutive ranks to wilds
+  // The player's order tells us the intended sequence low→high (left to right)
+  const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
+  const minNat=natVals[0],maxNat=natVals[natVals.length-1];
+  const n=cards.length;
+  const wildCount=cards.filter(c=>c.wild).length;
+
+  // Figure out run start: naturals span minNat..maxNat, wilds fill remaining slots
+  // The player's left-to-right order determines which end wilds extend to
+  // Count wilds to the LEFT of the leftmost natural in the ordered card list
+  const firstNatIdx=cards.findIndex(c=>!c.wild);
+  const wildsLeft=firstNatIdx; // wilds before first natural = extend low end
+  const wildsRight=wildCount-wildsLeft-(maxNat-minNat+1-nat.length); // wilds after last natural = extend high end
+  // (wilds in gaps are accounted for by the span check)
+
+  // Validate: naturals must form a valid partial sequence (no duplicates, within span)
+  if(new Set(natVals).size!==nat.length)return false; // duplicate ranks
+  if(maxNat-minNat>=n)return false; // naturals too spread out
+
+  const runStart=minNat-wildsLeft;
+  const runEnd=runStart+n-1;
+  if(runStart<2||runEnd>14)return false; // out of valid range (3..A)
+
+  // Assign ranks to each card in order
+  const assignedRanks=[];
+  let seq=runStart;
+  for(const card of cards){
+    if(!card.wild){
+      if(RO[card.rank]!==seq)return false; // natural not in expected position
+    }
+    assignedRanks.push({card,rank:seq});
+    seq++;
+  }
+
+  return{valid:true,suit,assignedRanks};
+}
+
+
+function openAdd(){
+  const cp=G.players[G.currentIdx];
+  const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  if(!sel.length){setWarn('Select cards to add.');return;}
+  document.getElementById('add-opts').innerHTML=cp.melds.map((m,mi)=>{
+    const combo=[...m.cards,...sel],v=valMeld(combo);
+    return`<div style="margin-bottom:0.75rem;padding:10px;background:#f0f0ec;border-radius:8px;">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">Meld ${mi+1} (${m.type}) — ${mPts(m)}pts</div>
+      <div class="flex gap-8 wrap center" style="gap:6px;">${m.cards.map(c=>rc(c,false,null,true)).join('')}<span style="color:#666;">+</span>${sel.map(c=>rc(c,false,null,true)).join('')}</div>
+      ${v.valid?`<button class="btn small primary" style="margin-top:8px;" onclick="confirmAdd(${mi})">Add here</button>`:`<div style="font-size:12px;color:#c0392b;margin-top:4px;">✗ ${v.msg}</div>`}
+    </div>`;
+  }).join('');
+  document.getElementById('add-err').textContent='';
+  document.getElementById('m-add').style.display='flex';
+}
+
+function confirmAdd(mi){
+  const cp=G.players[G.currentIdx];
+  const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  const combo=[...cp.melds[mi].cards,...sel];
+  const v=valMeld(combo);if(!v.valid){document.getElementById('add-err').textContent=v.msg;return;}
+  cp.melds[mi].cards=combo;sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+  G.sel=[];cm('m-add');autoDecl();updateGame();
+}
+
+function openRedeem(){
+  const cp=G.players[G.currentIdx];
+  const jkrs=[];
+  G.players.forEach((p,pi)=>p.melds.forEach((m,mi)=>m.cards.forEach((c,ci)=>{if(c.joker)jkrs.push({pi,mi,ci,card:c,pn:p.name});})));
+  if(!jkrs.length){setWarn('No jokers on the table.');return;}
+  document.getElementById('redeem-opts').innerHTML=jkrs.map((it,i)=>{
+    const decl=it.card.declaredAs||'(undeclared)';
+    const canR=!!it.card.declaredAs&&cp.hand.some(c=>!c.wild&&cLbl(c)===it.card.declaredAs);
+    return`<div style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem;padding:10px;background:#f0f0ec;border-radius:8px;">
+      ${rc(it.card)}
+      <div><div style="font-size:13px;font-weight:500;">${it.pn}'s meld · declared: ${decl}</div>
+      ${canR?`<button class="btn small primary" style="margin-top:6px;" onclick="confirmRedeem(${i})">Redeem with ${decl}</button>`:`<div style="font-size:12px;color:#c0392b;margin-top:4px;">${it.card.declaredAs?`Need ${decl} in your hand`:'No declaration — cannot redeem'}</div>`}
+      </div></div>`;
+  }).join('');
+  document.getElementById('redeem-err').textContent='';
+  document.getElementById('m-redeem').style.display='flex';
+  window._jkrs=jkrs;
+}
+
+function confirmRedeem(i){
+  const it=window._jkrs[i],cp=G.players[G.currentIdx];
+  const nat=cp.hand.find(c=>!c.wild&&cLbl(c)===it.card.declaredAs);
+  if(!nat){document.getElementById('redeem-err').textContent=`Need ${it.card.declaredAs} in hand.`;return;}
+  G.players[it.pi].melds[it.mi].cards[it.ci]=nat;
+  cp.hand=cp.hand.filter(c=>c.id!==nat.id);cp.hand.push(it.card);
+  G.sel=[];cm('m-redeem');updateGame();
+}
+
+function doDiscard(){
+  const cp=G.players[G.currentIdx];
+  if(G.sel.length!==1){setWarn('Select exactly one card to discard.');return;}
+  const card=cp.hand.find(c=>c.id===G.sel[0]);if(!card)return;
+  const goOut=cp.hand.length===1;
+  if(isSp(card)&&!goOut){setWarn(`${cLbl(card)} is special — can only discard it when going out.`);return;}
+  if(G.phase==='first-discard'){
+    const goOutFirst=cp.hand.length===1;
+    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
+    if(goOutFirst){endHand(G.currentIdx);return;}
+    G.phase='draw';endTurnHO();return;
+  }
+  if(!G.drewCard){setWarn('Draw a card first.');return;}
+  if(G.mustMeldTopId!==null){setWarn('First meld the top discard card with your naturals.');return;}
+  // Check if player should have declared but didn't — flag for next turn
+  if(!goOut&&cp.hasEverMelded&&(cp.hand.length-1)<=3&&!cp.declared){
+    cp.missedDeclaration=true;
+  }
+  cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
+  if(goOut&&cp.missedDeclaration){
+    setWarn('You cannot go out — you failed to declare on a previous turn when required.');
+    // They still discard the card, just can't go out
+    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
+    cp.missedDeclaration=false;
+    autoDecl();endTurnHO();return;
+  }
+  if(goOut){endHand(G.currentIdx);return;}
+  autoDecl();endTurnHO();
+}
+
+function autoDecl(){
+  const cp=G.players[G.currentIdx];
+  if(!cp.hasEverMelded)return;
+  if(cp.declared&&cp.hand.length>(cp.declaredCount||99)){cp.declared=false;cp.declaredCount=null;}
+}
+
+function openDeclare(){
+  const cp=G.players[G.currentIdx];
+  document.getElementById('decl-desc').textContent=`You have ${cp.hand.length} card(s). How many are you declaring?`;
+  const sel=document.getElementById('decl-sel');sel.innerHTML='';
+  for(let i=1;i<=cp.hand.length;i++){const o=document.createElement('option');o.value=i;o.textContent=`${i} card${i>1?'s':''}`;if(i===cp.hand.length)o.selected=true;sel.appendChild(o);}
+  document.getElementById('m-decl').style.display='flex';
+}
+function confirmDecl(){const cp=G.players[G.currentIdx];cp.declared=true;cp.declaredCount=+document.getElementById('decl-sel').value;cp.missedDeclaration=false;cm('m-decl');updateDeclUI();}
+function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
+
+function endTurnHO(){G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.currentIdx=(G.currentIdx+1)%G.players.length;G.phase='draw';clearSt();showHandoff();}
+
+function endHand(wi){
+  const winner=G.players[wi];
+  const meldedCards=winner.melds.flatMap(m=>m.cards);
+  const totalMelded=meldedCards.length;
+  // Bagel: went out all 13 at once, NOT on first turn (turnCount>0 means they've had a previous turn)
+  const isBagel=totalMelded===13&&!winner.hasEverMelded&&winner.turnCount>0;
+  // Dream: went out all 13 at once on very first turn
+  const isDream=totalMelded===13&&!winner.hasEverMelded&&winner.turnCount===0;
+
+  const payout=(isBagel||isDream)?10:5;
+  G.players.forEach((p,i)=>{if(i!==wi)p.money-=payout;});
+  winner.money+=payout*(G.players.length-1);
+
+  // Check bonuses for winner
+  const hasWilds=meldedCards.some(c=>c.wild);
+  const allBelow=meldedCards.filter(c=>!c.wild).every(c=>['3','4','5','6','7'].includes(c.rank));
+  const allAbove=meldedCards.filter(c=>!c.wild).every(c=>['8','9','10','J','Q','K','A'].includes(c.rank)||c.qs);
+
+  if(!hasWilds&&!isBagel&&!isDream) winner.checks.push({hand:G.hand+1,type:'No Wilds'});
+  if(allBelow&&!hasWilds) winner.checks.push({hand:G.hand+1,type:'All Below'});
+  if(allAbove&&!hasWilds) winner.checks.push({hand:G.hand+1,type:'All Above'});
+  if(!hasWilds&&(allBelow||allAbove)&&isBagel) winner.checks.push({hand:G.hand+1,type:'No Wilds'});
+  if(isBagel) winner.bagels.push({hand:G.hand+1});
+  if(isDream) winner.checks.push({hand:G.hand+1,type:'Dream'});
+
+  const hs=G.players.map(p=>{
+    const table=p.melds.reduce((s,m)=>s+mPts(m),0);
+    const penalty=p.hand.reduce((s,c)=>s+cPts(c,true),0);
+    const bonus=p===winner?100:0,total=table+penalty+bonus;
+    p.points+=total;
+    return{player:p,table,penalty,bonus,total};
+  });
+  G.log.push({
+    handNum:G.hand+1,
+    winner:winner.name,
+    isBagel,isDream,
+    scores:hs.map(h=>({name:h.player.name,table:h.table,penalty:h.penalty,bonus:h.bonus,total:h.total,running:h.player.points})),
+    moneyPayout:payout,
+    checks:winner.checks.filter(c=>c.hand===G.hand+1).map(c=>c.type),
+  });
+  showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove);
+}
+
+function endHandDead(){G.dealerIdx=(G.dealerIdx+1)%G.players.length;G.hand++;alert('Draw pile ran out — dead hand. No scoring. Deal passes left.');dealHand();}
+
+function showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove){
+  showSc('endhand');
+  const winner=G.players[wi];
+  document.getElementById('eh-title').textContent=`${winner.name} goes out!${isBagel?' — BAGEL! 🥯':isDream?' — DREAM! ✨':''}`;
+  let tags='';
+  if(isBagel) tags+=`<span class="bagel-tag">🥯 Bagel +250pts</span>`;
+  if(isDream) tags+=`<span class="check-tag">✨ Dream check</span>`;
+  if(!hasWilds&&!isBagel&&!isDream) tags+=`<span class="check-tag">✓ No Wilds check</span>`;
+  if(allBelow) tags+=`<span class="check-tag">✓ All Below check</span>`;
+  if(allAbove) tags+=`<span class="check-tag">✓ All Above check</span>`;
+
+  let html=`${tags?`<div style="margin-bottom:0.75rem;">${tags}</div>`:''}
+  <table class="score-table"><thead><tr><th>Player</th><th>On table</th><th>In hand</th><th>Bonus</th><th>Hand total</th><th>Running</th><th>Money</th></tr></thead><tbody>`;
+  hs.forEach(h=>{html+=`<tr>
+    <td><strong>${h.player.name}</strong>${h.player===winner?' 🏆':''}</td>
+    <td style="color:#2e7d32;">+${h.table}</td>
+    <td style="color:${h.penalty<0?'#c0392b':'#2e7d32'};">${h.penalty}</td>
+    <td style="color:#2e7d32;">+${h.bonus}</td>
+    <td><strong>${h.total>=0?'+':''}${h.total}</strong></td>
+    <td><strong>${h.player.points}</strong></td>
+    <td style="color:${h.player.money>=0?'#2e7d32':'#c0392b'};">${h.player.money>=0?'+':''}${h.player.money.toFixed(1)}¢</td>
+  </tr>`;});
+  html+='</tbody></table>';
+  if(G.players.some(p=>p.points>=1000)) html+=`<div class="status-bar" style="margin-top:1rem;">A player has reached 1,000 points — the game can end!</div>`;
+  document.getElementById('eh-content').innerHTML=html;
+  G.dealerIdx=wi;G.hand++;
+}
+
+function nextHand(){dealHand();}
+
+function showFinal(){
+  showSc('final');
+  const ps=[...G.players];
+  const over=ps.filter(p=>p.points>=1000).sort((a,b)=>b.points-a.points);
+  if(over.length) over[0].points+=200;
+  ps.forEach(p=>{p.fp=p.points+p.checks.length*100+p.bagels.length*250;});
+  ps.sort((a,b)=>b.fp-a.fp);const top=ps[0];
+  ps.forEach(p=>{if(p===top)return;const d=top.fp-p.fp,u=G.optRM?Math.round(d/500):Math.floor(d/500);top.money+=u*5;p.money-=u*5;});
+  let html=`<table class="score-table"><thead><tr><th>Player</th><th>Points</th><th>Checks</th><th>Bagels</th><th>Final</th><th>Money</th></tr></thead><tbody>`;
+  ps.forEach(p=>{html+=`<tr><td><strong>${p.name}</strong>${p===ps[0]?' 👑':''}</td><td>${p.points}</td><td>${p.checks.length}× +${p.checks.length*100}</td><td>${p.bagels.length}× +${p.bagels.length*250}</td><td><strong>${p.fp}</strong></td><td style="color:${p.money>=0?'#2e7d32':'#c0392b'};font-weight:500;">${p.money>=0?'+':''}${p.money.toFixed(1)}¢</td></tr>`;});
+  html+=`</tbody></table><div class="status-bar" style="margin-top:1rem;"><strong>${ps[0].name}</strong> wins! 🎉</div>`;
+  document.getElementById('final-content').innerHTML=html;
+}
+
+function undoLastHand(){
+  if(!G.log.length){alert('No hands to undo.');return;}
+  const last=G.log.pop();
+  restoreSnapshot(G.snapshot);
+  G.hand--;G.dealerIdx=(G.dealerIdx+G.players.length-1)%G.players.length;
+  alert(`Hand ${last.handNum} undone. Scores rolled back.`);
+  cm('m-score');dealHand();
+}
+
+function restartHand(){
+  if(!G.savedDeck){alert('No saved deck for this hand.');return;}
+  restoreSnapshot(G.snapshot);
+  // Remove any checks/bagels added this hand
+  const handNum=G.hand+1;
+  G.players.forEach(p=>{
+    p.checks=p.checks.filter(c=>c.hand!==handNum);
+    p.bagels=p.bagels.filter(b=>b.hand!==handNum);
+  });
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;});
+  G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
+  cm('m-score');
+  // Re-deal from saved deck, skip cut screen
+  const n=G.players.length,ci=G.cutterIdx||((G.dealerIdx+n-1)%n),fi=(G.dealerIdx+1)%n;
+  G.handFirstPlayer=fi;
+  const pool=[...G.savedDeck];
+  G.players[ci].hand=[];
+  for(let pi=0;pi<n;pi++){
+    const idx=(fi+pi)%n,target=idx===fi?14:13;
+    for(let j=0;j<target&&pool.length>0;j++) G.players[idx].hand.push(pool.shift());
+  }
+  G.drawPile=pool;G.discardPile=[];G.currentIdx=fi;G.phase='first-discard';
+  showHandoff();
+}
+
+function showScores(){
+  const rankNames={14:'A',13:'K',12:'Q',11:'J',10:'10',9:'9',8:'8',7:'7',6:'6',5:'5',4:'4',3:'3'};
+  let html=`<table class="score-table"><thead><tr><th>Player</th><th>Points</th><th>Money</th><th>Checks</th></tr></thead><tbody>`+
+    G.players.map(p=>`<tr><td>${p.name}${p.id===G.currentIdx?' (you)':''}</td><td>${p.points}</td><td style="color:${p.money>=0?'#2e7d32':'#c0392b'};">${p.money>=0?'+':''}${p.money.toFixed(1)}¢</td><td>${p.checks.map(c=>`<span class="check-tag">${c.type}</span>`).join('')||'—'}</td></tr>`).join('')+
+    '</tbody></table>';
+
+  // Debug / history panel
+  html+=`<div style="margin-top:1.25rem;">
+    <div style="font-size:13px;font-weight:500;margin-bottom:8px;">Hand history &amp; debug</div>
+    <div class="flex gap-8 wrap" style="margin-bottom:0.75rem;">
+      <button class="btn small" onclick="restartHand()">↺ Restart current hand</button>
+      <button class="btn small" onclick="undoLastHand()" ${!G.log||!G.log.length?'disabled':''}>↩ Undo last hand</button>
+    </div>`;
+
+  if(G.log&&G.log.length){
+    html+=`<div style="max-height:240px;overflow-y:auto;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;">
+      <table class="score-table" style="font-size:12px;">
+        <thead><tr><th>Hand</th><th>Winner</th><th>Checks</th>${G.players.map(p=>`<th>${p.name}</th>`).join('')}</tr></thead><tbody>`;
+    [...G.log].reverse().forEach(entry=>{
+      html+=`<tr>
+        <td>${entry.handNum}</td>
+        <td>${entry.winner}${entry.isBagel?' 🥯':entry.isDream?' ✨':''}</td>
+        <td>${entry.checks.map(c=>`<span class="check-tag" style="font-size:10px;">${c}</span>`).join('')||'—'}</td>
+        ${entry.scores.map(s=>`<td style="color:${s.total>=0?'#2e7d32':'#c0392b'};">${s.total>=0?'+':''}${s.total}<br><span style="color:#666;font-size:11px;">${s.running}pts</span></td>`).join('')}
+      </tr>`;
+    });
+    html+=`</tbody></table></div>`;
+  } else {
+    html+=`<div class="muted" style="font-size:12px;">No hands completed yet.</div>`;
+  }
+  html+=`</div>`;
+
+  document.getElementById('score-content').innerHTML=html;
+  document.getElementById('m-score').style.display='flex';
+}
+
+function cm(id){document.getElementById(id).style.display='none';}
+function showSc(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('screen-'+id).classList.add('active');}
+function setSt(m){const e=document.getElementById('status-bar');e.textContent=m;e.style.display='block';}
+function setWarn(m){const e=document.getElementById('warn-bar');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3500);}
+function clearSt(){document.getElementById('status-bar').style.display='none';document.getElementById('warn-bar').style.display='none';}
+window.onclick=e=>{if(e.target.classList.contains('modal-overlay'))cm(e.target.id);};
+setPC(4);
+</script>
+</body>
+</html>
