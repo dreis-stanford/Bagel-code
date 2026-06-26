@@ -211,6 +211,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       </div>
       <div class="sidebar-panel">
         <h4>This hand</h4>
+        <div style="font-size:11px;color:#999;margin-bottom:4px;" id="sidebar-hand-label">Your table pts</div>
         <div id="sidebar-hand-scores"></div>
       </div>
       <div class="sidebar-panel" style="padding:0;overflow:hidden;">
@@ -659,7 +660,7 @@ function confirmCut(){
   document.getElementById('cut-content').innerHTML=html;
 }
 
-function completeCut(){try{
+function completeCut(){
   const n=G.players.length,ci=G.cutterIdx,fi=(G.dealerIdx+1)%n;
   G.handFirstPlayer=fi;
   const kIds=new Set(G.keptByCutter.map(c=>c.id)),botId=G.cutterBot?.id;
@@ -675,11 +676,9 @@ function completeCut(){try{
   }
   G.drawPile=pool;G.discardPile=[];G.currentIdx=fi;G.phase='first-discard';
   showHandoff();
-}catch(e){console.error('completeCut err:',e);alert('completeCut: '+e.message);}
 }
 
 function showHandoff(){
-try{
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
   console.log('showHandoff: idx='+G.currentIdx+' name='+cp.name+' type='+cp.type+' isCPU='+isCPU+' singleHuman='+G.singleHumanMode+' allCPU='+G.allCPUMode);
@@ -730,21 +729,13 @@ try{
   showSc('handoff');
 
   if(isCPU) setTimeout(()=>runCPUTurn(),1000);
-}catch(e){console.error('showHandoff err:',e);alert('showHandoff: '+e.message);}
 }
 
 function revealTurn(){
-  console.log('revealTurn called: idx='+G.currentIdx+' phase='+G.phase);
-  const cp=G.players[G.currentIdx];
-  const diagMsg=`idx:${G.currentIdx} name:${cp?.name} hand:${cp?.hand?.length} phase:${G.phase}`;
-  try{showSc('game');}catch(e){alert('revealTurn showSc: '+e.message);return;}
-  try{G.sel=[];clearCPUAction();}catch(e){alert('revealTurn clear: '+e.message);return;}
-  try{updateGame();}catch(e){alert('revealTurn updateGame: '+e.message+' | '+diagMsg);return;}
-  try{
-    if(G.phase==='first-discard') setSt('You have 14 cards — select one to discard before play begins.');
-    else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
-    setTimeout(()=>checkJokerNotifications(),300);
-  }catch(e){alert('revealTurn setSt: '+e.message);}
+  showSc('game');G.sel=[];clearCPUAction();updateGame();
+  if(G.phase==='first-discard') setSt('You have 14 cards — select one to discard before play begins.');
+  else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
+  setTimeout(()=>checkJokerNotifications(),300);
 }
 
 function phLbl(){
@@ -755,23 +746,14 @@ function phLbl(){
 }
 
 function updateGame(){
-  try{
-    const cp=G.players[G.currentIdx];
-    document.getElementById('g-hand').textContent=`Hand ${G.hand+1}`;
-    document.getElementById('g-turn').textContent=`${cp.name}'s turn`;
-    document.getElementById('hand-lbl').textContent=`Your hand (${cp.hand.length} cards)`;
-  }catch(e){alert('updateGame header: '+e.message);return;}
-  try{renderOthers();}catch(e){alert('updateGame renderOthers: '+e.message);return;}
-  try{renderPiles();}catch(e){alert('updateGame renderPiles: '+e.message);return;}
-  try{renderAllMelds();}catch(e){alert('updateGame renderAllMelds: '+e.message);return;}
-  try{renderHand();}catch(e){alert('updateGame renderHand: '+e.message);return;}
-  try{updateBtns();updateDeclUI();}catch(e){alert('updateGame btns: '+e.message);}
+  const cp=G.players[G.currentIdx];
+  document.getElementById('g-hand').textContent=`Hand ${G.hand+1}`;
+  document.getElementById('g-turn').textContent=`${cp.name}'s turn`;
+  document.getElementById('hand-lbl').textContent=`Your hand (${cp.hand.length} cards)`;
+  renderOthers();renderPiles();renderAllMelds();renderHand();updateBtns();updateDeclUI();
 }
 
 function renderOthers(){
-  const spe=document.getElementById('sidebar-players');
-  if(!spe){alert('sidebar-players not found!');return;}
-  console.log('renderOthers: players='+G.players.length+' currentIdx='+G.currentIdx);
   const cp=G.players[G.currentIdx];
   document.getElementById('sidebar-players').innerHTML=G.players.map(p=>{
     const isActive=p.id===G.currentIdx;
@@ -789,14 +771,17 @@ function renderOthers(){
   }).join('');
 
   // Sidebar: current hand running scores
+  // Only show each player's melded points (public info), not hand penalty (hidden info)
   document.getElementById('sidebar-hand-scores').innerHTML=G.players.map(p=>{
     const tablePts=p.melds.reduce((s,m)=>s+mPts(m),0);
-    const handPts=p.hand.reduce((s,c)=>s+cPts(c,true),0);
+    const isMe=p.id===G.currentIdx;
+    // Show hand penalty only for current player (their own info)
+    const handPts=isMe?p.hand.reduce((s,c)=>s+cPts(c,true),0):null;
     return`<div class="sidebar-player">
       <div style="font-size:11px;">${p.name}</div>
       <div style="font-size:11px;text-align:right;">
         <span style="color:#2e7d32;">+${tablePts}</span>
-        <span style="color:${handPts<0?'#c0392b':'#666'}"> ${handPts}</span>
+        ${handPts!==null?`<span style="color:${handPts<0?'#c0392b':'#666'}"> ${handPts}</span>`:`<span style="color:#ccc"> ?</span>`}
       </div>
     </div>`;
   }).join('');
@@ -943,10 +928,7 @@ function renderHand(){
     </div>`;
   });
   hhtml+=`</div>`;
-  const curHandEl=document.getElementById('cur-hand');
-  console.log('renderHand: cur-hand el='+!!curHandEl+' hhtml len='+hhtml.length);
-  if(!curHandEl){alert('cur-hand element not found!');return;}
-  curHandEl.innerHTML=hhtml||`<div class='muted' style='padding:8px;'>No cards in hand</div>`;
+  document.getElementById('cur-hand').innerHTML=hhtml||`<div class='muted' style='padding:8px;'>No cards in hand</div>`;
 }
 
 function addJokerNotification(playerName, jokers){
@@ -1817,14 +1799,18 @@ function cpuDoDiscard(cp,card,goOut){
 function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
   if(G.singleHumanMode){
-    // Show acknowledge button so human can see the discard
-    setCPUAction(`🤖 ${G.players[G.currentIdx].name} discarded — <button class="btn small" style="margin-left:8px;" onclick="clearCPUAction();endTurnHO()">Continue ▶</button>`);
+    const name=G.players[G.currentIdx].name;
+    setCPUAction(`🤖 ${name} discarded — <button class="btn small" style="margin-left:8px;" onclick="ackCPUDiscard()">Continue ▶</button>`);
   } else if(G.allCPUMode){
-    // Double pause after discard in all-CPU mode
     setTimeout(()=>endTurnHO(), speed*2);
   } else {
     setTimeout(()=>endTurnHO(), speed);
   }
+}
+
+function ackCPUDiscard(){
+  clearCPUAction();
+  endTurnHO();
 }
 // ─────────────────────────────────────────────────────────────────
 
@@ -2062,7 +2048,12 @@ function setSt(m){const e=document.getElementById('status-bar');e.textContent=m;
 function setWarn(m){const e=document.getElementById('warn-bar');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3500);}
 function clearSt(){document.getElementById('status-bar').style.display='none';document.getElementById('warn-bar').style.display='none';}
 window.onclick=e=>{if(e.target.classList.contains('modal-overlay'))cm(e.target.id);};
-setPC(4);
+// Initialize after DOM is ready
+if(document.readyState==='loading'){
+  document.addEventListener('DOMContentLoaded',()=>setPC(4));
+} else {
+  setPC(4);
+}
 </script>
 </body>
 </html>
