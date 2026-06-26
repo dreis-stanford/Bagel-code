@@ -108,7 +108,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       <input type="checkbox" id="opt-rm"> Round money to nearest 500 pts
     </label>
     <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
-      <input type="checkbox" id="opt-show-cpu" checked> Show CPU cards (hand, cut card peek)
+      <input type="checkbox" id="opt-show-cpu" checked> Show CPU actions (hides hand, shows melds &amp; discards)
     </label>
     <div style="display:flex;align-items:center;gap:8px;font-size:14px;margin-top:8px;">
       <span>CPU speed:</span>
@@ -177,10 +177,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
         </div>
         <div class="pile-slot">
           <span>Discard pile</span>
-          <div style="display:flex;align-items:flex-end;gap:3px;">
-            <div id="disc-history" style="display:flex;align-items:flex-end;gap:2px;"></div>
-            <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:46px;min-height:68px;"></div>
-          </div>
+          <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:52px;min-height:76px;"></div>
           <span id="disc-ct"></span>
         </div>
       </div>
@@ -201,7 +198,6 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
         </div>
       </div>
       <div class="hand-area" id="cur-hand"></div>
-      <div id="cpu-hands-area"></div>
     </div>
     <!-- SIDEBAR -->
     <div class="game-sidebar">
@@ -211,7 +207,6 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       </div>
       <div class="sidebar-panel">
         <h4>This hand</h4>
-        <div style="font-size:11px;color:#999;margin-bottom:4px;" id="sidebar-hand-label">Your table pts</div>
         <div id="sidebar-hand-scores"></div>
       </div>
       <div class="sidebar-panel" style="padding:0;overflow:hidden;">
@@ -330,20 +325,6 @@ function rPts(r){if(r==='A')return 20;if(['K','Q','J','10','9','8'].includes(r))
 function cCol(c){return(c.suit==='♥'||c.suit==='♦')?'red':'black';}
 function cLbl(c){if(c.joker)return'★JK';if(c.wild)return`2${c.suit}`;return`${c.rank}${c.suit}`;}
 
-function normDecl(s){
-  // Normalize a user-typed declaration like "3C", "AC", "10s" to "3♣", "A♣", "10♠"
-  if(!s) return s;
-  s=s.trim();
-  const suitMap={'S':'♠','H':'♥','D':'♦','C':'♣','s':'♠','h':'♥','d':'♦','c':'♣',
-                 '♠':'♠','♥':'♥','♦':'♦','♣':'♣'};
-  // Last char is suit
-  const lastChar=s[s.length-1];
-  if(suitMap[lastChar]){
-    return s.slice(0,-1).toUpperCase()+suitMap[lastChar];
-  }
-  return s.toUpperCase();
-}
-
 function rc(c,sel,fn,sm){
   const w=sm?'38px':'46px',h=sm?'56px':'68px',rs=sm?'11px':'14px',ss=sm?'10px':'12px';
   let cls=`card-el ${cCol(c)}`;
@@ -441,7 +422,7 @@ function startDebugDeal(){
     optRM:document.getElementById('opt-rm').checked,
     optShowCPU:document.getElementById('opt-show-cpu')?.checked!==false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
-    log:[],snapshot:null,savedDeck:null,cutterIdx:0,jokerNotifications:[],
+    log:[],snapshot:null,savedDeck:null,cutterIdx:0,cpuTurnId:0,jokerNotifications:[],
     keptByCutter:[],cutterBot:null,topPart:[],botPart:[]
   };
   G.snapshot=snapshotPlayers();
@@ -545,7 +526,6 @@ function dealHand(){
   G.snapshot=snapshotPlayers(); // save state before this hand
   G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
-  if(G.cpuTurnId!==undefined) G.cpuTurnId++;
   G.savedDeck=null; // will be saved after cut
   showCut(shuffle(createDeck()));
 }
@@ -574,8 +554,7 @@ function showCut(deck){
       let html=`<p style="margin-bottom:0.75rem;">🤖 ${cutter.name} cuts the deck.</p>
       <div class="player-strip mb-1">`;
       if(kept.length>0) html+=`<div class="warning-bar">Special card(s) kept by ${cutter.name}:</div><div class="flex gap-8 wrap mt-half">${kept.map(c=>rc(c)).join('')}</div>`;
-      if(botN) html+=`<div style="margin-top:8px;"><div style="font-size:13px;font-weight:500;margin-bottom:6px;">Bottom card of top part (${cutter.name}'s peek):</div><div style="display:flex;align-items:center;gap:12px;">${rc(botN)}</div></div>`;
-      else if(!kept.length) html+=`<div class="muted">No special cards found.</div>`;
+      else html+=`<div class="muted">Normal card at bottom (${cutter.name} knows it).</div>`;
       if(G.perfectCut&&G.optPC) html+=`<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 12px;margin-top:8px;font-size:13px;color:#2e7d32;">✓ Perfect cut!</div>`;
       html+=`</div><div class="muted" style="font-size:12px;">Auto-advancing...</div>`;
       document.getElementById('cut-content').innerHTML=html;
@@ -681,7 +660,6 @@ function completeCut(){
 function showHandoff(){
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
-  console.log('showHandoff: idx='+G.currentIdx+' name='+cp.name+' type='+cp.type+' isCPU='+isCPU+' singleHuman='+G.singleHumanMode+' allCPU='+G.allCPUMode);
 
   // In single human or all-CPU mode: skip handoff
   if(G.singleHumanMode||G.allCPUMode){
@@ -692,7 +670,7 @@ function showHandoff(){
         setTimeout(()=>runCPUTurn(),G.allCPUMode?400:600);
       } else {
         // Hidden mode: execute CPU turn instantly, no visual
-        setTimeout(()=>runCPUInstant(),0);
+        runCPUInstant();
       }
       return;
     } else {
@@ -725,7 +703,6 @@ function showHandoff(){
   const top=G.discardPile[G.discardPile.length-1];
   s+=`<div class="row"><span>Discard pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
   document.getElementById('ho-summary').innerHTML=s;
-  console.log('showHandoff: idx='+G.currentIdx+' fi='+G.handFirstPlayer+' phase='+G.phase+' players='+G.players.map(p=>p.name+'('+p.hand.length+')').join(','));
   showSc('handoff');
 
   if(isCPU) setTimeout(()=>runCPUTurn(),1000);
@@ -754,6 +731,7 @@ function updateGame(){
 }
 
 function renderOthers(){
+  // Sidebar: all players with live status
   const cp=G.players[G.currentIdx];
   document.getElementById('sidebar-players').innerHTML=G.players.map(p=>{
     const isActive=p.id===G.currentIdx;
@@ -762,7 +740,7 @@ function renderOthers(){
       <div style="font-size:12px;">
         ${isCPU?'🤖':'👤'} ${p.name}${p.id===G.dealerIdx?' ✦':''}
         ${isActive?'<span style="color:#2E4057;font-size:10px;"> ▶</span>':''}
-        ${p.declared?`<span style="color:#e65100;font-size:10px;"> called(${p.declaredCount})</span>`:''}
+        ${p.declared?`<span style="color:#e65100;font-size:10px;"> decl(${p.declaredCount})</span>`:''}
       </div>
       <div style="font-size:11px;color:#666;text-align:right;">
         ${p.hand.length}🃏<br>${p.points}pts
@@ -771,11 +749,9 @@ function renderOthers(){
   }).join('');
 
   // Sidebar: current hand running scores
-  // Only show each player's melded points (public info), not hand penalty (hidden info)
   document.getElementById('sidebar-hand-scores').innerHTML=G.players.map(p=>{
     const tablePts=p.melds.reduce((s,m)=>s+mPts(m),0);
     const isMe=p.id===G.currentIdx;
-    // Show hand penalty only for current player (their own info)
     const handPts=isMe?p.hand.reduce((s,c)=>s+cPts(c,true),0):null;
     return`<div class="sidebar-player">
       <div style="font-size:11px;">${p.name}</div>
@@ -785,56 +761,14 @@ function renderOthers(){
       </div>
     </div>`;
   }).join('');
-
-  // CPU hands — shown below human hand when optShowCPU is on
-  const cpuHandsEl=document.getElementById('cpu-hands-area');
-  if(!cpuHandsEl) return;
-  const cpuPlayers=G.players.filter(p=>p.type&&p.type!=='human');
-  if(!G.optShowCPU||!cpuPlayers.length){cpuHandsEl.innerHTML='';return;}
-  cpuHandsEl.innerHTML=cpuPlayers.map(p=>{
-    const sorted=[...p.hand].sort((a,b)=>{
-      if(a.joker!==b.joker)return a.joker?-1:1;
-      if(a.wild!==b.wild)return a.wild?-1:1;
-      if(a.qs!==b.qs)return a.qs?-1:1;
-      const so=['♠','♥','♦','♣'];
-      if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
-      return(RO[b.rank]||0)-(RO[a.rank]||0);
-    });
-    return`<div style="margin-top:8px;">
-      <div style="font-size:11px;color:#666;margin-bottom:4px;">🤖 ${p.name}'s hand (${p.hand.length} cards)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;background:#f8f0ff;border-radius:8px;border:0.5px solid #d8b4fe;">
-        ${sorted.map(c=>rc(c,false,null,false)).join('')||'<span class="muted" style="font-size:12px;">No cards</span>'}
-      </div>
-    </div>`;
-  }).join('');
 }
 
 function renderPiles(){
   document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
-  const n=G.players.length;
-  const pile=G.discardPile;
-  const top=pile[pile.length-1];
-
-  // Show top card
+  const top=G.discardPile[G.discardPile.length-1];
   document.getElementById('disc-top').innerHTML=top?rc(top):
     `<div class="card-el" style="opacity:0.25;width:46px;height:68px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
-  document.getElementById('disc-ct').textContent=`${pile.length} card${pile.length!==1?'s':''}`;
-
-  // Show last N-1 discards as small history cards (oldest left, newest right before top)
-  const histEl=document.getElementById('disc-history');
-  if(!histEl) return;
-  const histCount=Math.min(n-1, pile.length-1); // up to N-1 previous cards
-  if(histCount<=0){histEl.innerHTML='';return;}
-  const histCards=pile.slice(pile.length-1-histCount, pile.length-1); // oldest first
-  histEl.innerHTML=histCards.map(c=>{
-    let cls=`card-el ${cCol(c)}`;
-    if(c.joker||c.wild)cls+=' special-wild';
-    if(c.qs)cls+=' special-qs';
-    return`<div class="${cls}" style="width:32px;height:46px;opacity:0.75;cursor:default;" title="Previous discard">
-      <div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div>
-      <div style="font-size:9px;">${c.suit}</div>
-    </div>`;
-  }).join('');
+  document.getElementById('disc-ct').textContent=`${G.discardPile.length} cards`;
 }
 
 function sortMeld(meld){
@@ -850,23 +784,19 @@ function sortMeld(meld){
 function renderAllMelds(){
   const hasMelds=G.players.some(p=>p.melds.length>0);
   if(!hasMelds){document.getElementById('all-melds').innerHTML='';return;}
-  document.getElementById('all-melds').innerHTML=
-    G.players.filter(p=>p.melds.length>0).map(p=>{
-      const isMe=p.id===G.currentIdx;
-      const nameColor=isMe?'#2E4057':'#666';
-      const bgColor=isMe?'#f0f4f8':'#f8f8f6';
-      sortMeld(p.melds[0]); // sort all melds
-      p.melds.forEach(m=>sortMeld(m));
-      return`<div style="margin-bottom:4px;padding:4px 6px;background:${bgColor};border-radius:8px;border:0.5px solid rgba(0,0,0,0.1);">
-        <div style="font-size:10px;font-weight:600;color:${nameColor};margin-bottom:3px;">${isMe?'You':p.name}${p.id===G.dealerIdx?' ✦':''}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;">
-          ${p.melds.map(m=>`<div style="display:inline-flex;align-items:center;gap:2px;background:#fff;border-radius:6px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.1);">
-            ${m.cards.map(c=>rcSmall(c)).join('')}
-            <span style="font-size:9px;color:#888;margin-left:2px;">${mPts(m)}</span>
-          </div>`).join('')}
-        </div>
-      </div>`;
-    }).join('');
+  document.getElementById('all-melds').innerHTML=`<div style="font-size:11px;color:#666;margin-bottom:4px;">Melds on table</div>
+  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;">
+    ${G.players.filter(p=>p.melds.length>0).map(p=>
+      p.melds.map(m=>{
+        sortMeld(m);
+        return`<div style="background:#fff;border-radius:8px;border:0.5px solid rgba(0,0,0,0.15);padding:4px 6px;display:inline-flex;align-items:center;gap:3px;">
+          <span style="font-size:10px;color:#999;margin-right:2px;">${p.name.charAt(0)}:</span>
+          ${m.cards.map(c=>rcSmall(c)).join('')}
+          <span style="font-size:10px;color:#666;margin-left:2px;">${mPts(m)}</span>
+        </div>`;
+      }).join('')
+    ).join('')}
+  </div>`;
 }
 
 function rcSmall(c){
@@ -881,7 +811,6 @@ function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;ren
 
 function renderHand(){
   const cp=G.players[G.currentIdx];
-  console.log('renderHand: cp='+cp?.name+' hand='+cp?.hand?.length+' handOrder='+cp?.handOrder);
   // Use custom order if set, otherwise auto-sort
   if(!cp.handOrder){
     // First time: auto-sort
@@ -956,9 +885,8 @@ function showJokerNotifyModal(msgs){
   const modal=document.createElement('div');
   modal.className='modal-overlay';
   modal.style.zIndex='200';
-  const isCall=msgs.includes('called');
   modal.innerHTML=`<div class="modal" style="max-width:380px;">
-    <h2 style="margin-bottom:0.75rem;">${isCall?'📣 Calling cards':'🃏 Joker declaration'}${msgs.includes('\n')?'s':''}</h2>
+    <h2 style="margin-bottom:0.75rem;">🃏 Joker declaration${msgs.includes('\n')?'s':''}</h2>
     <div style="background:#fff8e1;border:1px solid #f9a825;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:14px;white-space:pre-line;">${msgs}</div>
     <button class="btn primary" style="width:100%;" onclick="this.closest('.modal-overlay').remove()">Got it</button>
   </div>`;
@@ -1096,7 +1024,7 @@ function labelSelectedJoker(){
   const current=joker.declaredAs||'';
   const val=prompt(`Label this joker (e.g. A♥, 7♠, 10♦):\nCurrent: ${current||'(none)'}`,current);
   if(val!==null){
-    joker.declaredAs=normDecl(val.trim())||null;
+    joker.declaredAs=val.trim()||null;
     renderHand();
   }
 }
@@ -1306,38 +1234,24 @@ function openMeld(){
   document.getElementById('meld-err').textContent='';
   const jkrs=sel.filter(c=>c.joker);
   if(jkrs.length){
+    // Try to auto-determine joker position from the run context
     const nat=sel.filter(c=>!c.wild);
     const autoDecls={};
-    const ambiguous=new Set();
     if(nat.length>=2&&new Set(nat.map(c=>c.suit)).size===1){
-      // It's a run — try to auto-determine joker position
+      // It's a run — try running valMeld to get assignedRanks
       const runResult=tryRun(sel);
       if(runResult&&runResult.assignedRanks){
-        // Check if there's an alternative valid placement for each joker
         runResult.assignedRanks.forEach(({card,rank})=>{
-          if(!card.joker) return;
-          // Try flipping wilds to the other end — if that also yields a valid run, it's ambiguous
-          const reversed=[...sel].reverse();
-          const altResult=tryRun(reversed);
-          const altRank=altResult&&altResult.assignedRanks
-            ?altResult.assignedRanks.find(r=>r.card.id===card.id)?.rank
-            :null;
-          if(altRank&&altRank!==rank){
-            ambiguous.add(card.id); // multiple valid positions — ask player
-          } else {
+          if(card.joker){
             const rankName=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);
             autoDecls[card.id]=rankName+runResult.suit;
           }
         });
       }
     }
-    const needsInput=jkrs.filter(j=>!autoDecls[j.id]||ambiguous.has(j.id));
+    const needsInput=jkrs.filter(j=>!autoDecls[j.id]);
     if(needsInput.length){
-      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>{
-        const hint=ambiguous.has(j.id)?` (ambiguous — choose)`:' (auto-detected)';
-        const prefill=autoDecls[j.id]||j.declaredAs||'';
-        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents${hint}:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ 7S 10d" value="${prefill}" style="margin-bottom:0;"></div>`;
-      }).join('');
+      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`).join('');
       document.getElementById('jdecl-area').style.display='block';
     } else {
       // All jokers auto-declared — pre-fill hidden inputs and hide section
@@ -1356,7 +1270,7 @@ function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   document.getElementById('meld-err').style.color='#c0392b';
-  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=normDecl(i.value.trim())||j.declaredAs||null;});
+  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=i.value.trim()||j.declaredAs||null;});
 
   if(G.mustMeldTopId!==null){
     if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
@@ -1580,61 +1494,13 @@ function confirmDecl(){
   const cp=G.players[G.currentIdx];
   cp.declared=true;
   cp.declaredCount=+document.getElementById('decl-sel').value;
-  cp.calledThisTurn=true;
+  cp.calledThisTurn=true; // cannot go out on same turn as calling
   cp.missedDeclaration=false;
-  // Notify other players
-  if(G.jokerNotifications===undefined) G.jokerNotifications=[];
-  const seenBy=new Set([G.currentIdx]);
-  G.jokerNotifications.push({
-    msg:`${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`,
-    seenBy, id:Date.now()
-  });
   cm('m-decl');updateDeclUI();
 }
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
 
 // ── CPU TURN ENGINE ──────────────────────────────────────────────
-function cpuDraw(cp){
-  const top=G.discardPile[G.discardPile.length-1];
-  if(top&&G.discardPile.length<=8){
-    const naturalsInHand=cp.hand.filter(c=>!c.wild);
-    const naturalsOnTable=cp.melds.flatMap(m=>m.cards.filter(c=>!c.wild));
-    const allNaturals=[...naturalsInHand,...naturalsOnTable];
-    let bestMeld=null,bestPts=0;
-    const combos=combinations(allNaturals,2);
-    for(const pair of combos){
-      const testCards=[top,...pair];
-      const v=valMeld(testCards);
-      if(v.valid){const pts=testCards.reduce((s,c)=>s+cPts(c,false),0);if(pts>bestPts){bestPts=pts;bestMeld=testCards;}}
-      for(const extra of allNaturals.filter(c=>!pair.includes(c))){
-        const testCards4=[top,...pair,extra];
-        const v4=valMeld(testCards4);
-        if(v4.valid){const pts4=testCards4.reduce((s,c)=>s+cPts(c,false),0);if(pts4>bestPts){bestPts=pts4;bestMeld=testCards4;}}
-      }
-    }
-    if(bestMeld&&bestPts>20){
-      const pileCards=[...G.discardPile];
-      G.discardPile=[];pileCards.forEach(c=>cp.hand.push(c));
-      if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
-      G.drewCard=true;G.phase='play';
-      const v=valMeld(bestMeld);
-      if(v.valid){
-        if(v.type==='run'){const rr=tryRun(bestMeld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-        const nm={cards:bestMeld,type:v.type};sortMeld(nm);cp.melds.push(nm);
-        bestMeld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
-        if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
-        cp.hasEverMelded=true;
-      }
-      return;
-    }
-  }
-  if(G.drawPile.length===0){endHandDead();return;}
-  const drawn=G.drawPile.pop();
-  cp.hand.push(drawn);
-  if(cp.handOrder) cp.handOrder.push(drawn.id);
-  G.drewCard=true;G.phase='play';
-}
-
 function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
@@ -1648,45 +1514,41 @@ function runCPUTurn(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   const speed=G.allCPUMode?Math.round(G.cpuSpeed/2):G.cpuSpeed;
-  // Stamp this turn so stale async callbacks can detect they're outdated
   const turnId=++G.cpuTurnId;
-  const guard=(fn)=>(...args)=>{ if(G.cpuTurnId===turnId&&G.phase!=='cut') fn(...args); };
+  const alive=()=>G.cpuTurnId===turnId&&G.phase!=='cut';
 
   if(G.phase==='first-discard'){
     setCPUAction(`🤖 ${cp.name} is playing opening turn...`);
-    setTimeout(guard(()=>cpuMeldAsync(cp,speed,guard(()=>cpuDiscard(cp)))),speed);
+    setTimeout(()=>{if(alive())cpuMeldAsync(cp,speed,()=>{if(alive())cpuDiscard(cp);});},speed);
     return;
   }
 
   setCPUAction(`🤖 ${cp.name} is drawing...`);
-  setTimeout(guard(()=>{
+  setTimeout(()=>{
+    if(!alive())return;
     cpuDraw(cp);updateGame();
     setCPUAction(`🤖 ${cp.name} is melding...`);
-    setTimeout(guard(()=>{
-      cpuMeldAsync(cp,speed,guard(()=>{
+    setTimeout(()=>{
+      if(!alive())return;
+      cpuMeldAsync(cp,speed,()=>{
+        if(!alive())return;
         setCPUAction(`🤖 ${cp.name} is discarding...`);
-        setTimeout(guard(()=>cpuDiscard(cp)),speed);
-      }));
-    }),speed);
-  }),speed);
+        setTimeout(()=>{if(alive())cpuDiscard(cp);},speed);
+      });
+    },speed);
+  },speed);
 }
 
 function cpuMeldAsync(cp,speed,onDone){
-  // Abort if hand ended or player changed
-  if(!G.players[G.currentIdx]||G.players[G.currentIdx]!==cp||G.phase==='cut'){onDone();return;}
+  if(G.players[G.currentIdx]!==cp){onDone();return;}
   const meld=cpuFindOneMeld(cp);
   if(meld){
     const v=valMeld(meld);
     if(v.valid){
-      if(v.type==='run'){
-        const rr=tryRun(meld);
-        if(rr&&rr.assignedRanks) rr.assignedRanks.forEach(({card,rank})=>{
-          if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
-        });
-      }
+      if(v.type==='run'){const rr=tryRun(meld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
       const nm={cards:meld,type:v.type};sortMeld(nm);cp.melds.push(nm);
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
-      if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+      if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;updateGame();
       setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
     }
@@ -1698,7 +1560,7 @@ function cpuMeldAsync(cp,speed,onDone){
       if(v2.valid){
         em.cards=combined;sortMeld(em);
         cp.hand=cp.hand.filter(h=>h.id!==card.id);
-        if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+        if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         updateGame();
         setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
       }
@@ -1710,36 +1572,135 @@ function cpuMeldAsync(cp,speed,onDone){
 function cpuFindOneMeld(cp){
   for(let size=4;size>=3;size--){
     const combos=combinations(cp.hand,size);
-    for(const combo of combos) if(valMeld(combo).valid) return combo;
+    for(const combo of combos)if(valMeld(combo).valid)return combo;
   }
   return null;
 }
 
+function setCPUAction(msg){
+  const el=document.getElementById('cpu-action-bar');
+  if(!el) return;
+  el.innerHTML=`<div class="cpu-action">${msg}</div>`;
+  el.style.display='block';
+}
+function clearCPUAction(){
+  const el=document.getElementById('cpu-action-bar');
+  if(el){el.innerHTML='';el.style.display='none';}
+}
+
+function cpuDraw(cp){
+  // Conservative: consider picking up pile if top card forms a valuable meld
+  const top=G.discardPile[G.discardPile.length-1];
+  if(top && G.discardPile.length<=8){ // don't pick up huge piles
+    const naturalsInHand=cp.hand.filter(c=>!c.wild);
+    const naturalsOnTable=cp.melds.flatMap(m=>m.cards.filter(c=>!c.wild));
+    const allNaturals=[...naturalsInHand,...naturalsOnTable];
+    // Try all pairs of naturals to see if top card forms a valid meld with them
+    let bestMeld=null,bestPts=0;
+    const combos=combinations(allNaturals,2);
+    for(const pair of combos){
+      const testCards=[top,...pair];
+      const v=valMeld(testCards);
+      if(v.valid){
+        const pts=testCards.reduce((s,c)=>s+cPts(c,false),0);
+        if(pts>bestPts){bestPts=pts;bestMeld=testCards;}
+      }
+      // Also try 3 naturals
+      for(const extra of allNaturals.filter(c=>!pair.includes(c))){
+        const testCards4=[top,...pair,extra];
+        const v4=valMeld(testCards4);
+        if(v4.valid){
+          const pts4=testCards4.reduce((s,c)=>s+cPts(c,false),0);
+          if(pts4>bestPts){bestPts=pts4;bestMeld=testCards4;}
+        }
+      }
+    }
+    // Pick up if meld value > 20pts (worth more than a typical draw)
+    // and pile size is manageable
+    if(bestMeld && bestPts>20){
+      // Execute pickup
+      const pileCards=[...G.discardPile];
+      G.discardPile=[];
+      pileCards.forEach(c=>cp.hand.push(c));
+      if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
+      G.drewCard=true;G.phase='play';
+      // Auto-meld the required first meld
+      const v=valMeld(bestMeld);
+      if(v.valid){
+        // Assign declaredAs for jokers in runs
+        if(v.type==='run'){
+          const rr=tryRun(bestMeld);
+          if(rr&&rr.assignedRanks) rr.assignedRanks.forEach(({card,rank})=>{
+            if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
+          });
+        }
+        const newMeld3={cards:bestMeld,type:v.type};sortMeld(newMeld3);cp.melds.push(newMeld3);
+        bestMeld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+        if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+        cp.hasEverMelded=true;
+      }
+      return;
+    }
+  }
+  // Default: draw from deck
+  if(G.drawPile.length===0){endHandDead();return;}
+  const drawn=G.drawPile.pop();
+  cp.hand.push(drawn);
+  if(cp.handOrder) cp.handOrder.push(drawn.id);
+  G.drewCard=true;G.phase='play';
+}
+
 function cpuMeld(cp){
-  // Synchronous — used for instant/hidden mode only
+  // Find and play all valid melds greedily
   let melded=true;
   while(melded){
     melded=false;
-    const meld=cpuFindOneMeld(cp);
+    const meld=cpuFindBestMeld(cp);
     if(meld){
       const v=valMeld(meld);
       if(v.valid){
-        if(v.type==='run'){const rr=tryRun(meld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-        const nm={cards:meld,type:v.type};sortMeld(nm);cp.melds.push(nm);
+        // Auto-assign declaredAs for jokers in runs
+        if(v.type==='run'&&tryRun(meld)){
+          const rr=tryRun(meld);
+          if(rr&&rr.assignedRanks) rr.assignedRanks.forEach(({card,rank})=>{
+            if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
+          });
+        }
+        const newMeld4={cards:meld,type:v.type};sortMeld(newMeld4);cp.melds.push(newMeld4);
         meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
-        cp.hasEverMelded=true;melded=true;
+        cp.hasEverMelded=true;
+        melded=true;
       }
     }
-    for(const em of cp.melds){
+    // Also try adding to existing melds
+    for(const existingMeld of cp.melds){
       for(const card of cp.hand){
-        const combined=[...em.cards,card];
+        const combined=[...existingMeld.cards,card];
         const v2=valMeld(combined);
-        if(v2.valid){em.cards=combined;sortMeld(em);cp.hand=cp.hand.filter(h=>h.id!==card.id);if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));melded=true;break;}
+        if(v2.valid){
+          existingMeld.cards=combined;
+          cp.hand=cp.hand.filter(h=>h.id!==card.id);
+          if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+          melded=true;
+          break;
+        }
       }
       if(melded) break;
     }
   }
+}
+
+function cpuFindBestMeld(cp){
+  const hand=cp.hand;
+  // Try all combinations of 3 and 4 cards
+  for(let size=4;size>=3;size--){
+    const combos=combinations(hand,size);
+    for(const combo of combos){
+      if(valMeld(combo).valid) return combo;
+    }
+  }
+  return null;
 }
 
 function combinations(arr,k){
@@ -1786,14 +1747,12 @@ function cpuDiscard(cp){
 function cpuDoDiscard(cp,card,goOut){
   if(!goOut&&cp.missedDeclaration){
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
-    cp.missedDeclaration=false;updateGame();
-    cpuAfterDiscard();return;
+    cp.missedDeclaration=false;updateGame();cpuAfterDiscard();return;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
   if(goOut){endHand(G.currentIdx);return;}
-  if(cp.hasEverMelded&&cp.hand.length<=3&&!cp.declared) cp.missedDeclaration=true;
-  updateGame();
-  cpuAfterDiscard();
+  if(cp.hasEverMelded&&cp.hand.length<=3&&!cp.declared)cp.missedDeclaration=true;
+  updateGame();cpuAfterDiscard();
 }
 
 function cpuAfterDiscard(){
@@ -1802,16 +1761,14 @@ function cpuAfterDiscard(){
     const name=G.players[G.currentIdx].name;
     setCPUAction(`🤖 ${name} discarded — <button class="btn small" style="margin-left:8px;" onclick="ackCPUDiscard()">Continue ▶</button>`);
   } else if(G.allCPUMode){
-    setTimeout(()=>endTurnHO(), speed*2);
+    setTimeout(()=>endTurnHO(),speed*2);
   } else {
-    setTimeout(()=>endTurnHO(), speed);
+    setTimeout(()=>endTurnHO(),speed);
   }
 }
 
-function ackCPUDiscard(){
-  clearCPUAction();
-  endTurnHO();
-}
+function ackCPUDiscard(){clearCPUAction();endTurnHO();}
+
 // ─────────────────────────────────────────────────────────────────
 
 function endTurnHO(){
@@ -1825,7 +1782,6 @@ function endTurnHO(){
   G.phase='draw';clearSt();
   const next=G.players[G.currentIdx];
   if(next&&next.type!=='human'&&!G.optShowCPU&&(G.singleHumanMode||G.allCPUMode)){
-    // Break synchronous chain to avoid stack overflow with multiple CPU players
     setTimeout(()=>runCPUInstant(),0);
   } else {
     showHandoff();
@@ -2048,12 +2004,7 @@ function setSt(m){const e=document.getElementById('status-bar');e.textContent=m;
 function setWarn(m){const e=document.getElementById('warn-bar');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3500);}
 function clearSt(){document.getElementById('status-bar').style.display='none';document.getElementById('warn-bar').style.display='none';}
 window.onclick=e=>{if(e.target.classList.contains('modal-overlay'))cm(e.target.id);};
-// Initialize after DOM is ready
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded',()=>setPC(4));
-} else {
-  setPC(4);
-}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>setPC(4));}else{setPC(4);}
 </script>
 </body>
 </html>
