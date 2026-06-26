@@ -108,23 +108,23 @@ The order in which cards are selected for a run defines the sequence (low to hig
 
 ---
 
-## Declaration
+## Calling Cards
 
-Once you have melded at least one card, you must declare your status at the end of your turn if either of the following is true:
+Once you have melded at least one card, you must **call** (announce how many cards you hold) at the end of your turn if either of the following is true:
 
 - You have 3 or fewer cards remaining in your hand after discarding.
 - A single drawn card could result in you going out (through melding, joker redemption, or any combination).
 
-When declaring, you must state the number of cards you are holding.
 
-**Declaration is always the player's responsibility** — it is never automatic. If you fail to declare when required, you cannot go out on your next turn (your discard will still be accepted, but going out on the following turn will be blocked).
+
+**Calling is always the player's responsibility** — it is never automatic. If you fail to call when required, you cannot go out on your next turn (your discard will still be accepted, but going out on the following turn will be blocked).
 
 Additional rules:
 
-- You must undeclare if your situation changes and you no longer meet either condition.
-- Redeclare only if you play a card that changes your hand count.
-- **Exception:** If you pick up a multi-card pile that unexpectedly puts you out, you may go out without a prior declaration.
-- **Exception:** If you have not yet melded anything, declaration rules do not apply (this protects Bagel and Dream hands).
+- You must uncall if your situation changes and you no longer meet either condition.
+- Re-call only if you play a card that changes your hand count.
+- **Exception:** If you pick up a multi-card pile that unexpectedly puts you out, you may go out without a prior call.
+- **Exception:** If you have not yet melded anything, calling rules do not apply (this protects Bagel and Dream hands).
 
 ---
 
@@ -222,4 +222,4 @@ The highest scorer (after all bonuses) collects from each other player individua
 2. Optionally redeem Joker(s) from any meld.
 3. Meld and/or add to your own melds (as much as you want).
 4. Discard one card (mandatory, even when going out).
-5. Declare if you have ≤3 cards after discarding, or if one card could take you out — only required after your first meld. Declaration is your responsibility and is never automatic.
+5. Call if you have ≤3 cards after discarding, or if one card could take you out — only required after your first meld. Calling is your responsibility and is never automatic.
