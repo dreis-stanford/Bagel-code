@@ -773,6 +773,7 @@ function completeCut(){
 function showHandoff(){
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
+  console.log('showHandoff: idx='+G.currentIdx+' type='+cp.type+' isCPU='+isCPU+' phase='+G.phase+' single='+G.singleHumanMode+' allCPU='+G.allCPUMode+' showCPU='+G.optShowCPU);
 
   // In single human or all-CPU mode: skip handoff
   if(G.singleHumanMode||G.allCPUMode){
@@ -1724,6 +1725,7 @@ function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.dec
 function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
+  try{
   if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
   if(cp.type==='gambler'){
     gamblerDraw(cp);
@@ -1733,6 +1735,7 @@ function runCPUInstant(){
     cpuMeld(cp);
     cpuDiscard(cp);
   }
+  }catch(e){alert('runCPUInstant error (phase='+G.phase+' type='+cp.type+'): '+e.message);}
 }
 
 function runCPUTurn(){
