@@ -773,7 +773,6 @@ function completeCut(){
 function showHandoff(){
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
-  console.log('showHandoff: idx='+G.currentIdx+' type='+cp.type+' isCPU='+isCPU+' phase='+G.phase+' single='+G.singleHumanMode+' allCPU='+G.allCPUMode+' showCPU='+G.optShowCPU);
 
   // In single human or all-CPU mode: skip handoff
   if(G.singleHumanMode||G.allCPUMode){
@@ -1048,8 +1047,11 @@ function showJokerNotifyModal(msgs){
   const modal=document.createElement('div');
   modal.className='modal-overlay';
   modal.style.zIndex='200';
+  const isCall=msgs.includes('📣');
+  const isRedeem=msgs.includes('redeemed');
+  const title=isCall?'📣 Calling cards':isRedeem?'🃏 Joker redeemed':`🃏 Joker declaration${msgs.includes('\n')?'s':''}`;
   modal.innerHTML=`<div class="modal" style="max-width:380px;">
-    <h2 style="margin-bottom:0.75rem;">🃏 Joker declaration${msgs.includes('\n')?'s':''}</h2>
+    <h2 style="margin-bottom:0.75rem;">${title}</h2>
     <div style="background:#fff8e1;border:1px solid #f9a825;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:14px;white-space:pre-line;">${msgs}</div>
     <button class="btn primary" style="width:100%;" onclick="this.closest('.modal-overlay').remove()">Got it</button>
   </div>`;
@@ -1397,34 +1399,50 @@ function openMeld(){
   document.getElementById('meld-err').textContent='';
   const jkrs=sel.filter(c=>c.joker);
   if(jkrs.length){
-    // Try to auto-determine joker position from the run context
     const nat=sel.filter(c=>!c.wild);
     const autoDecls={};
+    const ambiguous=new Set();
     if(nat.length>=2&&new Set(nat.map(c=>c.suit)).size===1){
-      // It's a run — try running valMeld to get assignedRanks
+      // It's a run — try to auto-determine joker position
       const runResult=tryRun(sel);
       if(runResult&&runResult.assignedRanks){
         runResult.assignedRanks.forEach(({card,rank})=>{
-          if(card.joker){
+          if(!card.joker) return;
+          // Check if a different valid position exists by trying all possible runStarts
+          const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
+          const minNat=natVals[0], wildCount=sel.filter(c=>c.wild).length;
+          let altRanks=new Set();
+          for(let s=minNat-wildCount; s<=minNat; s++){
+            const runEnd=s+sel.length-1;
+            if(s>=3&&runEnd<=14&&s!==rank){
+              // Another valid start exists — this position is ambiguous
+              const gap=rank-s;
+              if(gap>0) altRanks.add(rank-gap);
+            }
+          }
+          if(altRanks.size>0){
+            ambiguous.add(card.id); // multiple valid positions — ask player
+          } else {
             const rankName=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);
             autoDecls[card.id]=rankName+runResult.suit;
           }
         });
       }
     }
-    const needsInput=jkrs.filter(j=>!autoDecls[j.id]);
+    const needsInput=jkrs.filter(j=>!autoDecls[j.id]||ambiguous.has(j.id));
     if(needsInput.length){
-      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`).join('');
+      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>{
+        const hint=ambiguous.has(j.id)?' (ambiguous — please specify)':'';
+        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents${hint}:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`;
+      }).join('');
       document.getElementById('jdecl-area').style.display='block';
     } else {
-      // All jokers auto-declared — pre-fill hidden inputs and hide section
       document.getElementById('jdecl-inputs').innerHTML=jkrs.map(j=>`<input type="hidden" id="jd${j.id}" value="${autoDecls[j.id]}">`).join('');
       document.getElementById('jdecl-area').style.display='none';
-      // Show auto-declaration info
       document.getElementById('meld-err').style.color='#2e7d32';
       document.getElementById('meld-err').textContent=`Joker auto-declared as: ${jkrs.map(j=>autoDecls[j.id]).join(', ')}`;
     }
-    jkrs.forEach(j=>{if(autoDecls[j.id])j._pendingDecl=autoDecls[j.id];});
+    jkrs.forEach(j=>{if(autoDecls[j.id]&&!ambiguous.has(j.id))j._pendingDecl=autoDecls[j.id];});
   } else document.getElementById('jdecl-area').style.display='none';
   document.getElementById('m-meld').style.display='flex';
 }
@@ -1701,9 +1719,10 @@ function shouldCall(cp){
 
 function openDeclare(){
   const cp=G.players[G.currentIdx];
-  document.getElementById('decl-desc').textContent=`You have ${cp.hand.length} card(s). How many cards are you calling?`;
+  const afterDiscard=cp.hand.length-1;
+  document.getElementById('decl-desc').textContent=`You have ${cp.hand.length} cards. After discarding you'll have ${afterDiscard}. How many are you calling?`;
   const sel=document.getElementById('decl-sel');sel.innerHTML='';
-  for(let i=1;i<=cp.hand.length;i++){const o=document.createElement('option');o.value=i;o.textContent=`${i} card${i>1?'s':''}`;if(i===cp.hand.length)o.selected=true;sel.appendChild(o);}
+  for(let i=1;i<=cp.hand.length;i++){const o=document.createElement('option');o.value=i;o.textContent=`${i} card${i>1?'s':''}`;if(i===afterDiscard)o.selected=true;sel.appendChild(o);}
   document.getElementById('m-decl').style.display='flex';
 }
 function confirmDecl(){
@@ -1725,7 +1744,6 @@ function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.dec
 function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
-  try{
   if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
   if(cp.type==='gambler'){
     gamblerDraw(cp);
@@ -1735,7 +1753,6 @@ function runCPUInstant(){
     cpuMeld(cp);
     cpuDiscard(cp);
   }
-  }catch(e){alert('runCPUInstant error (phase='+G.phase+' type='+cp.type+'): '+e.message);}
 }
 
 function runCPUTurn(){
@@ -2272,22 +2289,24 @@ function showFinal(){
 function buildGameContext(){
   if(!G||!G.players) return 'Game not started.';
   const cp=G.players[G.currentIdx];
+  const cLblD=c=>cLbl(c)+(c.deck!==undefined?`[${c.deck}]`:''); // include deck number
   const lines=[
     `=== Bagel Feedback Context ===`,
     `Hand: ${G.hand+1} | Turn: ${cp?.turnCount||0} | Phase: ${G.phase}`,
     `Current player: ${cp?.name} (${cp?.type||'human'})`,
     `Draw pile: ${G.drawPile.length} cards | Discard pile: ${G.discardPile.length} cards`,
-    `Top discard: ${G.discardPile.length?cLbl(G.discardPile[G.discardPile.length-1]):'(empty)'}`,
+    `Top discard: ${G.discardPile.length?cLblD(G.discardPile[G.discardPile.length-1]):'(empty)'}`,
     ``,
     `Players:`,
     ...G.players.map(p=>{
-      const hand=p.hand.map(c=>cLbl(c)).join(' ');
-      const melds=p.melds.map(m=>m.cards.map(c=>cLbl(c)).join(' ')).join(' | ');
+      const hand=p.hand.map(c=>cLblD(c)).join(' ');
+      const melds=p.melds.map(m=>m.cards.map(c=>cLblD(c)).join(' ')).join(' | ');
       return `  ${p.name} (${p.type||'human'}): hand=[${hand}] melds=[${melds||'none'}] pts=${p.points} called=${p.declared?p.declaredCount:'no'}`;
     }),
     ``,
     `Scores: ${G.players.map(p=>`${p.name}=${p.points}pts ${p.money>=0?'+':''}${p.money.toFixed(1)}¢`).join(' | ')}`,
     `Mode: ${G.singleHumanMode?'1 human + CPU':G.allCPUMode?'all CPU':'all human'}`,
+    `Deck audit: ${(()=>{const r=auditDeck();return`${r.total}/106 cards, deck0=${r.deck0}/53, deck1=${r.deck1}/53`+(r.dups.length?`, DUPS:${r.dups.map(([id,locs])=>`id${id}@${locs.join(',')}`).join(' ')}`:', no dups')+(r.missing.length?`, MISSING:${r.missing.join(',')}`:'');})()}`,
     `================================`,
   ];
   return lines.join('\n');
