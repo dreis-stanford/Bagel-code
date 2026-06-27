@@ -862,33 +862,55 @@ function updateGame(){
 }
 
 function renderOthers(){
-  // Sidebar: all players with live status
   const cp=G.players[G.currentIdx];
   document.getElementById('sidebar-players').innerHTML=G.players.map(p=>{
     const isActive=p.id===G.currentIdx;
     const isCPU=p.type&&p.type!=='human';
+    const showCount=!isCPU||G.optShowCPU;
     return`<div class="sidebar-player" style="${isActive?'font-weight:600;':''}">
       <div style="font-size:12px;">
         ${isCPU?'🤖':'👤'} ${p.name}${p.id===G.dealerIdx?' ✦':''}
         ${isActive?'<span style="color:#2E4057;font-size:10px;"> ▶</span>':''}
-        ${p.declared?`<span style="color:#e65100;font-size:10px;"> decl(${p.declaredCount})</span>`:''}
+        ${p.declared?`<span style="color:#e65100;font-size:10px;"> called(${p.declaredCount})</span>`:''}
       </div>
       <div style="font-size:11px;color:#666;text-align:right;">
-        ${p.hand.length}🃏<br>${p.points}pts
+        ${showCount?`${p.hand.length}🃏`:'—'}<br>${p.points}pts
       </div>
     </div>`;
   }).join('');
 
-  // Sidebar: current hand running scores
   document.getElementById('sidebar-hand-scores').innerHTML=G.players.map(p=>{
     const tablePts=p.melds.reduce((s,m)=>s+mPts(m),0);
-    const isMe=p.id===G.currentIdx;
-    const handPts=isMe?p.hand.reduce((s,c)=>s+cPts(c,true),0):null;
+    const isCPU=p.type&&p.type!=='human';
+    const isHumanPlayer=!isCPU;
+    const canShowPenalty=isHumanPlayer||G.optShowCPU;
+    const handPts=canShowPenalty?p.hand.reduce((s,c)=>s+cPts(c,true),0):null;
     return`<div class="sidebar-player">
       <div style="font-size:11px;">${p.name}</div>
       <div style="font-size:11px;text-align:right;">
         <span style="color:#2e7d32;">+${tablePts}</span>
         ${handPts!==null?`<span style="color:${handPts<0?'#c0392b':'#666'}"> ${handPts}</span>`:`<span style="color:#ccc"> ?</span>`}
+      </div>
+    </div>`;
+  }).join('');
+
+  const cpuHandsEl=document.getElementById('cpu-hands-area');
+  if(!cpuHandsEl) return;
+  const cpuPlayers=G.players.filter(p=>p.type&&p.type!=='human');
+  if(!G.optShowCPU||!cpuPlayers.length){cpuHandsEl.innerHTML='';return;}
+  cpuHandsEl.innerHTML=cpuPlayers.map(p=>{
+    const sorted=[...p.hand].sort((a,b)=>{
+      if(a.joker!==b.joker)return a.joker?-1:1;
+      if(a.wild!==b.wild)return a.wild?-1:1;
+      if(a.qs!==b.qs)return a.qs?-1:1;
+      const so=['♠','♥','♦','♣'];
+      if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
+      return(RO[b.rank]||0)-(RO[a.rank]||0);
+    });
+    return`<div style="margin-top:8px;">
+      <div style="font-size:11px;color:#666;margin-bottom:4px;">🤖 ${p.name}'s hand (${p.hand.length} cards)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;background:#f8f0ff;border-radius:8px;border:0.5px solid #d8b4fe;">
+        ${sorted.map(c=>rc(c,false,null,false)).join('')||'<span class="muted" style="font-size:12px;">No cards</span>'}
       </div>
     </div>`;
   }).join('');
@@ -941,8 +963,8 @@ function renderAllMelds(){
   if(!hasMelds){document.getElementById('all-melds').innerHTML='';return;}
   document.getElementById('all-melds').innerHTML=
     G.players.filter(p=>p.melds.length>0).map(p=>{
-      const isMe=p.id===G.currentIdx;
       const isHuman=!p.type||p.type==='human';
+      const isMe=isHuman; // "You" = the human player, not whoever's turn it is
       const label=isMe?'You':p.name;
       const bg=isMe?'#f0f4f8':'#f8f8f6';
       const border=isMe?'#b0c4de':'rgba(0,0,0,0.1)';
@@ -1050,10 +1072,12 @@ function showJokerNotifyModal(msgs){
   const isCall=msgs.includes('📣');
   const isRedeem=msgs.includes('redeemed');
   const title=isCall?'📣 Calling cards':isRedeem?'🃏 Joker redeemed':`🃏 Joker declaration${msgs.includes('\n')?'s':''}`;
+  const bg=isCall?'#fff3e0':'#fff8e1';
+  const border=isCall?'#f57c00':'#f9a825';
   modal.innerHTML=`<div class="modal" style="max-width:380px;">
-    <h2 style="margin-bottom:0.75rem;">${title}</h2>
-    <div style="background:#fff8e1;border:1px solid #f9a825;border-radius:8px;padding:10px 14px;margin-bottom:1rem;font-size:14px;white-space:pre-line;">${msgs}</div>
-    <button class="btn primary" style="width:100%;" onclick="this.closest('.modal-overlay').remove()">Got it</button>
+    <h2 style="margin-bottom:0.75rem;${isCall?'color:#e65100;':''}">${title}</h2>
+    <div style="background:${bg};border:2px solid ${border};border-radius:8px;padding:12px 16px;margin-bottom:1rem;font-size:${isCall?'16':'14'}px;font-weight:${isCall?'600':'400'};white-space:pre-line;">${msgs}</div>
+    <button class="btn primary" style="width:100%;${isCall?'font-size:16px;padding:12px;':''}" onclick="this.closest('.modal-overlay').remove()">Got it</button>
   </div>`;
   document.body.appendChild(modal);
 }
@@ -2136,7 +2160,7 @@ function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
   if(G.singleHumanMode){
     const name=G.players[G.currentIdx].name;
-    setCPUAction(`🤖 ${name} discarded — <button class="btn small" style="margin-left:8px;" onclick="ackCPUDiscard()">Continue ▶</button>`);
+    setCPUAction(`🤖 ${name} discarded — <button class="btn primary" style="margin-left:12px;padding:8px 20px;font-size:14px;" onclick="ackCPUDiscard()">Continue ▶</button>`);
   } else if(G.allCPUMode){
     setTimeout(()=>endTurnHO(),speed*2);
   } else {
