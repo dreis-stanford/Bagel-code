@@ -37,6 +37,8 @@ p { font-size: 14px; color: #666; line-height: 1.6; }
 .card-el.red { color: #c0392b; }
 .card-el.black { color: #111; }
 .card-el.back { background: #2E4057; border-color: #1a2d40; }
+.card-el.back-red { background: linear-gradient(135deg, #c0392b 0%, #922b21 100%); border-color: #7b241c; }
+.card-el.back-blue { background: linear-gradient(135deg, #2980b9 0%, #1a5276 100%); border-color: #154360; }
 .card-el.special-wild { background: #fff8e1; border-color: #f39c12; }
 .card-el.special-qs { background: #fce4ec; border-color: #c0392b; }
 .hand-area { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px; background: #f0f0ec; border-radius: 12px; min-height: 96px; border: 0.5px solid rgba(0,0,0,0.15); }
@@ -403,6 +405,15 @@ function cPts(c,ih){
 function rPts(r){if(r==='A')return 20;if(['K','Q','J','10','9','8'].includes(r))return 10;return 5;}
 function cCol(c){return(c.suit==='♥'||c.suit==='♦')?'red':'black';}
 function cLbl(c){if(c.joker)return'★JK';if(c.wild)return`2${c.suit}`;return`${c.rank}${c.suit}`;}
+
+function rcBack(deck,sm){
+  const w=sm?'38px':'46px',h=sm?'56px':'68px';
+  const cls=`card-el ${deck===0?'back-red':'back-blue'}`;
+  // Simple pattern using CSS border trick for inner border effect
+  return`<div class="${cls}" style="width:${w};height:${h};display:flex;align-items:center;justify-content:center;">
+    <div style="width:${sm?'26px':'32px'};height:${sm?'38px':'48px'};border-radius:3px;border:2px solid rgba(255,255,255,0.3);"></div>
+  </div>`;
+}
 
 function rc(c,sel,fn,sm){
   const w=sm?'38px':'46px',h=sm?'56px':'68px',rs=sm?'11px':'14px',ss=sm?'10px':'12px';
@@ -897,7 +908,18 @@ function renderOthers(){
   const cpuHandsEl=document.getElementById('cpu-hands-area');
   if(!cpuHandsEl) return;
   const cpuPlayers=G.players.filter(p=>p.type&&p.type!=='human');
-  if(!G.optShowCPU||!cpuPlayers.length){cpuHandsEl.innerHTML='';return;}
+  if(!cpuPlayers.length){cpuHandsEl.innerHTML='';return;}
+  if(!G.optShowCPU){
+    // Show card backs for each CPU player
+    cpuHandsEl.innerHTML=cpuPlayers.map(p=>`
+      <div style="margin-top:8px;">
+        <div style="font-size:11px;color:#666;margin-bottom:4px;">🤖 ${p.name} (${p.hand.length} cards)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;">
+          ${p.hand.map(c=>rcBack(c.deck,true)).join('')}
+        </div>
+      </div>`).join('');
+    return;
+  }
   cpuHandsEl.innerHTML=cpuPlayers.map(p=>{
     const sorted=[...p.hand].sort((a,b)=>{
       if(a.joker!==b.joker)return a.joker?-1:1;
@@ -994,6 +1016,14 @@ function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;ren
 
 function renderHand(){
   const cp=G.players[G.currentIdx];
+  const isCPU=cp.type&&cp.type!=='human';
+  // If CPU and not showing cards, show card backs
+  if(isCPU&&!G.optShowCPU){
+    const backs=cp.hand.map(c=>rcBack(c.deck)).join('');
+    document.getElementById('cur-hand').innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:4px;">${backs}</div>`;
+    document.getElementById('hand-lbl').textContent=`${cp.name}'s hand (${cp.hand.length} cards)`;
+    return;
+  }
   // Use custom order if set, otherwise auto-sort
   if(!cp.handOrder){
     // First time: auto-sort
