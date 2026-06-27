@@ -309,12 +309,38 @@ function createDeck(){
   let d=[],id=0;
   for(let i=0;i<2;i++){
     for(let s of SUITS){
-      for(let r of RANKS) d.push({id:id++,rank:r,suit:s,wild:false,joker:false,qs:r==='Q'&&s==='♠',declaredAs:null});
-      d.push({id:id++,rank:'2',suit:s,wild:true,joker:false,qs:false,declaredAs:null});
+      for(let r of RANKS) d.push({id:id++,deck:i,rank:r,suit:s,wild:false,joker:false,qs:r==='Q'&&s==='♠',declaredAs:null});
+      d.push({id:id++,deck:i,rank:'2',suit:s,wild:true,joker:false,qs:false,declaredAs:null});
     }
-    d.push({id:id++,rank:'JK',suit:'',wild:true,joker:true,qs:false,declaredAs:null});
+    d.push({id:id++,deck:i,rank:'JK',suit:'',wild:true,joker:true,qs:false,declaredAs:null});
   }
   return d;
+}
+// Audit helper — call from console: auditDeck()
+function auditDeck(){
+  const all=[];
+  G.players.forEach(p=>{
+    p.hand.forEach(c=>all.push({c,loc:`${p.name} hand`}));
+    p.melds.forEach((m,mi)=>m.cards.forEach(c=>all.push({c,loc:`${p.name} meld${mi}`})));
+  });
+  G.drawPile.forEach(c=>all.push({c,loc:'draw'}));
+  G.discardPile.forEach(c=>all.push({c,loc:'discard'}));
+  const byId=new Map();
+  all.forEach(({c,loc})=>{
+    if(!byId.has(c.id)) byId.set(c.id,[]);
+    byId.get(c.id).push(loc);
+  });
+  const dups=[...byId.entries()].filter(([,locs])=>locs.length>1);
+  const missing=[];
+  for(let id=0;id<106;id++) if(!byId.has(id)) missing.push(id);
+  console.log(`Total cards accounted: ${all.length} (expect 106)`);
+  console.log(`Deck 0: ${all.filter(({c})=>c.deck===0).length} (expect 53)`);
+  console.log(`Deck 1: ${all.filter(({c})=>c.deck===1).length} (expect 53)`);
+  if(dups.length) console.warn('DUPLICATES:',dups.map(([id,locs])=>`id${id}(${locs.join(',')})`).join(' '));
+  else console.log('No duplicates ✓');
+  if(missing.length) console.warn('MISSING ids:',missing.join(','));
+  else console.log('No missing cards ✓');
+  return{total:all.length,dups,missing};
 }
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
 function isSp(c){return c.wild||c.qs;}
@@ -335,7 +361,8 @@ function rc(c,sel,fn,sm){
   if(c.joker||c.wild)cls+=' special-wild';
   if(c.qs)cls+=' special-qs';
   const declLabel=c.joker&&c.declaredAs?`<div style="font-size:8px;color:#e65100;line-height:1;margin-top:1px;">${c.declaredAs}</div>`:'';
-  return`<div class="${cls}" style="width:${w};height:${h};" ${fn?`onclick="${fn}(${c.id})"`:''}  ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:${rs};font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:${ss};">${c.suit}</div>${declLabel}</div>`;
+  const deckDot=`<div style="position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.5;"></div>`;
+  return`<div class="${cls}" style="width:${w};height:${h};position:relative;" ${fn?`onclick="${fn}(${c.id})"`:''}  ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:${rs};font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:${ss};">${c.suit}</div>${declLabel}${deckDot}</div>`;
 }
 
 
@@ -417,7 +444,7 @@ function startDebugDeal(){
   // Initialize G now that parsing succeeded
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false})),
+    players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:discardCard?[discardCard]:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
     handFirstPlayer:0,swapFirst:null,reordering:false,
@@ -461,6 +488,7 @@ function renderPlayerInputs(n){
       <select id="pt${i}" onchange="onTypeChange()" style="width:150px;margin-bottom:0;">
         <option value="human">👤 Human</option>
         <option value="conservative">🤖 Conservative</option>
+        <option value="gambler">🎲 Gambler</option>
       </select>
     </div>`).join('');
   // Default: player 1 human, rest human
@@ -499,7 +527,7 @@ function startGame(){
   const allCPUMode=humanCount===0;
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,type:types[i],hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false})),
+    players:names.map((name,i)=>({name,id:i,type:types[i],hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
     handFirstPlayer:1,swapFirst:null,reordering:false,
@@ -792,10 +820,13 @@ function renderPiles(){
   document.getElementById('disc-top').innerHTML=top?rc(top):
     `<div class="card-el" style="opacity:0.25;width:46px;height:68px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
   document.getElementById('disc-ct').textContent=`${pile.length} card${pile.length!==1?'s':''}`;
-  // Show last N-1 discards as small faded history cards
+  // Show last N-1 discards as small faded history cards (one per player, no repeats)
   const histEl=document.getElementById('disc-history');
   if(!histEl) return;
   const n=G.players.length;
+  if(pile.length<2){histEl.innerHTML='';return;}
+  // Walk back through pile, take up to N-1 unique-player discards
+  // We don't track who discarded what, so just show last N-1 cards
   const histCount=Math.min(n-1, pile.length-1);
   if(histCount<=0){histEl.innerHTML='';return;}
   const histCards=pile.slice(pile.length-1-histCount, pile.length-1);
@@ -812,11 +843,15 @@ function renderPiles(){
 
 function sortMeld(meld){
   if(meld.type==='run'){
-    meld.cards.sort((a,b)=>{
-      if(a.wild&&!b.wild) return 1;
-      if(!a.wild&&b.wild) return -1;
-      return (RO[a.rank]||0)-(RO[b.rank]||0);
-    });
+    const rankOf=c=>{
+      if(c.wild&&c.declaredAs){
+        // Extract rank from declaredAs e.g. "7♠" → "7"
+        const r=c.declaredAs.replace(/[♠♥♦♣]/g,'').trim();
+        return RO[r]||0;
+      }
+      return c.wild?0:(RO[c.rank]||0);
+    };
+    meld.cards.sort((a,b)=>rankOf(a)-rankOf(b));
   }
 }
 
@@ -848,7 +883,8 @@ function rcSmall(c){
   if(c.joker||c.wild)cls+=' special-wild';
   if(c.qs)cls+=' special-qs';
   const declLabel=c.joker&&c.declaredAs?`<div style="font-size:7px;color:#e65100;line-height:1;">${c.declaredAs}</div>`:'';
-  return`<div class="${cls}" style="width:32px;height:46px;border-radius:4px;flex-shrink:0;" ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:9px;">${c.suit}</div>${declLabel}</div>`;
+  const deckDot2=`<div style="position:absolute;top:1px;right:1px;width:4px;height:4px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;"></div>`;
+  return`<div class="${cls}" style="width:32px;height:46px;border-radius:4px;flex-shrink:0;position:relative;" ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:9px;">${c.suit}</div>${declLabel}${deckDot2}</div>`;
 }
 
 function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;renderHand();}
@@ -898,6 +934,7 @@ function renderHand(){
       <div style='font-size:15px;font-weight:700;'>${c.joker?'★':c.rank}</div>
       <div style='font-size:14px;'>${c.suit}</div>
       ${c.joker&&c.declaredAs?`<div style='font-size:8px;color:#e65100;line-height:1;margin-top:1px;'>${c.declaredAs}</div>`:''}
+      <div style='position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;'></div>
     </div>`;
   });
   hhtml+=`</div>`;
@@ -1557,9 +1594,14 @@ function confirmDecl(){
   const cp=G.players[G.currentIdx];
   cp.declared=true;
   cp.declaredCount=+document.getElementById('decl-sel').value;
-  cp.calledThisTurn=true; // cannot go out on same turn as calling
+  cp.calledThisTurn=true;
   cp.missedDeclaration=false;
+  // Queue notification for other players + show immediate modal
+  if(!G.jokerNotifications) G.jokerNotifications=[];
+  const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
+  G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
   cm('m-decl');updateDeclUI();
+  showJokerNotifyModal(callMsg);
 }
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
 
@@ -1568,9 +1610,14 @@ function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
-  cpuDraw(cp);
-  cpuMeld(cp);
-  cpuDiscard(cp);
+  if(cp.type==='gambler'){
+    gamblerDraw(cp);
+    gamblerDiscard(cp);
+  } else {
+    cpuDraw(cp);
+    cpuMeld(cp);
+    cpuDiscard(cp);
+  }
 }
 
 function runCPUTurn(){
@@ -1589,15 +1636,22 @@ function runCPUTurn(){
   setCPUAction(`🤖 ${cp.name} is drawing...`);
   setTimeout(()=>{
     if(!alive())return;
-    cpuDraw(cp);updateGame();
+    if(cp.type==='gambler') gamblerDraw(cp); else cpuDraw(cp);
+    updateGame();
     setCPUAction(`🤖 ${cp.name} is melding...`);
     setTimeout(()=>{
       if(!alive())return;
-      cpuMeldAsync(cp,speed,()=>{
-        if(!alive())return;
+      if(cp.type==='gambler'){
+        // Gambler melds only if going for bagel (handled in gamblerDiscard)
         setCPUAction(`🤖 ${cp.name} is discarding...`);
-        setTimeout(()=>{if(alive())cpuDiscard(cp);},speed);
-      });
+        setTimeout(()=>{if(alive())gamblerDiscard(cp);},speed);
+      } else {
+        cpuMeldAsync(cp,speed,()=>{
+          if(!alive())return;
+          setCPUAction(`🤖 ${cp.name} is discarding...`);
+          setTimeout(()=>{if(alive())cpuDiscard(cp);},speed);
+        });
+      }
     },speed);
   },speed);
 }
@@ -1687,18 +1741,22 @@ function cpuDraw(cp){
       pileCards.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
       G.drewCard=true;G.phase='play';
-      // Auto-meld the required first meld
+      // Separate hand cards from table cards in bestMeld to avoid duplicates
+      const tableNatIds=new Set(cp.melds.flatMap(m=>m.cards.map(c=>c.id)));
+      const meldFromHand=bestMeld.filter(c=>!tableNatIds.has(c.id));
+      const meldFromTable=bestMeld.filter(c=>tableNatIds.has(c.id));
       const v=valMeld(bestMeld);
       if(v.valid){
-        // Assign declaredAs for jokers in runs
-        if(v.type==='run'){
-          const rr=tryRun(bestMeld);
-          if(rr&&rr.assignedRanks) rr.assignedRanks.forEach(({card,rank})=>{
-            if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
-          });
+        if(v.type==='run'){const rr=tryRun(bestMeld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
+        if(meldFromTable.length>0){
+          // Extend existing meld rather than create duplicate
+          const meldIdx=cp.melds.findIndex(m=>m.cards.some(c=>meldFromTable.some(t=>t.id===c.id)));
+          if(meldIdx>=0){cp.melds[meldIdx].cards=[...cp.melds[meldIdx].cards,...meldFromHand];sortMeld(cp.melds[meldIdx]);}
+          else{const nm={cards:meldFromHand,type:v.type};sortMeld(nm);cp.melds.push(nm);}
+        } else {
+          const nm={cards:bestMeld,type:v.type};sortMeld(nm);cp.melds.push(nm);
         }
-        const newMeld3={cards:bestMeld,type:v.type};sortMeld(newMeld3);cp.melds.push(newMeld3);
-        bestMeld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+        meldFromHand.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         cp.hasEverMelded=true;
       }
@@ -1806,6 +1864,128 @@ function cpuDiscard(cp){
     cpuDoDiscard(cp,toDiscard,goOut);
   }
 }
+
+// ── GAMBLER CPU ───────────────────────────────────────────────────
+
+// Check if hand can be melded out leaving exactly 1 card to discard
+function canBagel(hand){
+  if(hand.length<2) return null;
+  // Work on copies to avoid mutating declaredAs on real cards
+  const copies=hand.map(c=>({...c}));
+  const idToOrig=new Map(hand.map(c=>[c.id,c]));
+  for(const dc of copies){
+    if(isSp(dc)) continue;
+    const rest=copies.filter(c=>c.id!==dc.id);
+    if(canMeldAll(rest)) return idToOrig.get(dc.id);
+  }
+  for(const dc of copies.filter(c=>isSp(c))){
+    const rest=copies.filter(c=>c.id!==dc.id);
+    if(canMeldAll(rest)) return idToOrig.get(dc.id);
+  }
+  return null;
+}
+
+// Check if all cards can be completely melded (no leftovers)
+function canMeldAll(hand){
+  if(hand.length===0) return true;
+  if(hand.length<3) return false;
+  // Try all combos of 3 and 4
+  for(let size=Math.min(4,hand.length);size>=3;size--){
+    const combos=combinations(hand,size);
+    for(const combo of combos){
+      if(valMeld(combo).valid){
+        const rest=hand.filter(c=>!combo.includes(c));
+        if(canMeldAll(rest)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function gamblerShouldBail(cp){
+  // Bail if someone else has called (they might go out next turn)
+  const otherCalled=G.players.some(p=>p.id!==cp.id&&p.declared);
+  if(otherCalled) return true;
+  // Bail if hand is too large to realistically bagel (>16 cards)
+  if(cp.hand.length>16) return true;
+  // Bail if we've had more than 4 turns without a bagel being possible
+  if(cp.turnCount>4&&!canBagel(cp.hand)) return true;
+  return false;
+}
+
+function gamblerDraw(cp){
+  // Only pick up pile if it enables an immediate bagel
+  const top=G.discardPile[G.discardPile.length-1];
+  if(top&&G.discardPile.length>=2){
+    const testHand=[...cp.hand,...G.discardPile];
+    const bagelCard=canBagel(testHand);
+    if(bagelCard){
+      // Pick up the pile — bagel is possible!
+      const pile=[...G.discardPile];
+      G.discardPile=[];
+      pile.forEach(c=>cp.hand.push(c));
+      if(cp.handOrder) pile.forEach(c=>cp.handOrder.push(c.id));
+      G.drewCard=true;G.phase='play';
+      cp._gamblerBagelCard=bagelCard.id;
+      return;
+    }
+  }
+  // Always draw from deck (don't pick up pile unless it enables bagel)
+  if(G.drawPile.length===0){endHandDead();return;}
+  const drawn=G.drawPile.pop();
+  cp.hand.push(drawn);
+  if(cp.handOrder) cp.handOrder.push(drawn.id);
+  G.drewCard=true;G.phase='play';
+}
+
+function gamblerDiscard(cp){
+  // Check if we should bail and play conservatively
+  if(gamblerShouldBail(cp)){
+    cp.type='conservative'; // switch to conservative for rest of hand
+    cpuMeld(cp);
+    cpuDiscard(cp);
+    return;
+  }
+  // Try to go out with a bagel
+  const bagelCard=cp._gamblerBagelCard
+    ?cp.hand.find(c=>c.id===cp._gamblerBagelCard)
+    :canBagel(cp.hand);
+  if(bagelCard){
+    // Meld everything except bagelCard, then discard it
+    const toMeld=cp.hand.filter(c=>c.id!==bagelCard.id);
+    // Meld all as one or multiple melds
+    let remaining=[...toMeld];
+    while(remaining.length>=3){
+      let melded=false;
+      for(let size=Math.min(4,remaining.length);size>=3;size--){
+        const combos=combinations(remaining,size);
+        for(const combo of combos){
+          const v=valMeld(combo);
+          if(v.valid){
+            if(v.type==='run'){const rr=tryRun(combo);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
+            const nm={cards:combo,type:v.type};sortMeld(nm);cp.melds.push(nm);
+            combo.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+            if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+            remaining=remaining.filter(c=>!combo.includes(c));
+            cp.hasEverMelded=true;melded=true;break;
+          }
+        }
+        if(melded) break;
+      }
+      if(!melded) break;
+    }
+    // Discard the bagel card (going out)
+    cp._gamblerBagelCard=null;
+    cpuDoDiscard(cp,bagelCard,true);
+    return;
+  }
+  // No bagel possible this turn — discard highest penalty non-special card
+  cp._gamblerBagelCard=null;
+  const sorted=[...cp.hand].filter(c=>!isSp(c)).sort((a,b)=>Math.abs(cPts(b,true))-Math.abs(cPts(a,true)));
+  const toDiscard=sorted[0]||cp.hand.find(c=>!isSp(c))||cp.hand[0];
+  cpuDoDiscard(cp,toDiscard,cp.hand.length===1);
+}
+// ─────────────────────────────────────────────────────────────────
 
 function cpuDoDiscard(cp,card,goOut){
   if(!goOut&&cp.missedDeclaration){
