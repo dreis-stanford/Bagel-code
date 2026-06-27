@@ -177,7 +177,10 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
         </div>
         <div class="pile-slot">
           <span>Discard pile</span>
-          <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:52px;min-height:76px;"></div>
+          <div style="display:flex;align-items:flex-end;gap:3px;">
+            <div id="disc-history" style="display:flex;align-items:flex-end;gap:2px;"></div>
+            <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:52px;min-height:76px;"></div>
+          </div>
           <span id="disc-ct"></span>
         </div>
       </div>
@@ -704,6 +707,22 @@ function showHandoff(){
   s+=`<div class="row"><span>Draw pile</span><span>${G.drawPile.length} cards</span></div>`;
   const top=G.discardPile[G.discardPile.length-1];
   s+=`<div class="row"><span>Discard pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
+  // Show last N discards so player can see what happened since their turn
+  const n=G.players.length;
+  const recentCount=Math.min(n, G.discardPile.length);
+  if(recentCount>0){
+    const recent=G.discardPile.slice(G.discardPile.length-recentCount);
+    s+=`<div style="margin-top:8px;font-size:11px;color:#666;margin-bottom:4px;">Recent discards (oldest → newest):</div>`;
+    s+=`<div style="display:flex;gap:4px;flex-wrap:wrap;">${recent.map(c=>{
+      let cls=`card-el ${cCol(c)}`;
+      if(c.joker||c.wild)cls+=' special-wild';
+      if(c.qs)cls+=' special-qs';
+      return`<div class="${cls}" style="width:34px;height:50px;flex-shrink:0;">
+        <div style="font-size:11px;font-weight:700;">${c.joker?'★':c.rank}</div>
+        <div style="font-size:10px;">${c.suit}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
   document.getElementById('ho-summary').innerHTML=s;
   showSc('handoff');
 
@@ -728,7 +747,8 @@ function updateGame(){
   const cp=G.players[G.currentIdx];
   document.getElementById('g-hand').textContent=`Hand ${G.hand+1}`;
   document.getElementById('g-turn').textContent=`${cp.name}'s turn`;
-  document.getElementById('hand-lbl').textContent=`Your hand (${cp.hand.length} cards)`;
+  const isHuman=!cp.type||cp.type==='human';
+  document.getElementById('hand-lbl').textContent=`${isHuman?'Your':cp.name+"'s"} hand (${cp.hand.length} cards)`;
   renderOthers();renderPiles();renderAllMelds();renderHand();updateBtns();updateDeclUI();
 }
 
@@ -767,10 +787,27 @@ function renderOthers(){
 
 function renderPiles(){
   document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
-  const top=G.discardPile[G.discardPile.length-1];
+  const pile=G.discardPile;
+  const top=pile[pile.length-1];
   document.getElementById('disc-top').innerHTML=top?rc(top):
     `<div class="card-el" style="opacity:0.25;width:46px;height:68px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
-  document.getElementById('disc-ct').textContent=`${G.discardPile.length} cards`;
+  document.getElementById('disc-ct').textContent=`${pile.length} card${pile.length!==1?'s':''}`;
+  // Show last N-1 discards as small faded history cards
+  const histEl=document.getElementById('disc-history');
+  if(!histEl) return;
+  const n=G.players.length;
+  const histCount=Math.min(n-1, pile.length-1);
+  if(histCount<=0){histEl.innerHTML='';return;}
+  const histCards=pile.slice(pile.length-1-histCount, pile.length-1);
+  histEl.innerHTML=histCards.map(c=>{
+    let cls=`card-el ${cCol(c)}`;
+    if(c.joker||c.wild)cls+=' special-wild';
+    if(c.qs)cls+=' special-qs';
+    return`<div class="${cls}" style="width:34px;height:50px;opacity:0.65;cursor:default;flex-shrink:0;">
+      <div style="font-size:11px;font-weight:700;">${c.joker?'★':c.rank}</div>
+      <div style="font-size:10px;">${c.suit}</div>
+    </div>`;
+  }).join('');
 }
 
 function sortMeld(meld){
@@ -786,19 +823,24 @@ function sortMeld(meld){
 function renderAllMelds(){
   const hasMelds=G.players.some(p=>p.melds.length>0);
   if(!hasMelds){document.getElementById('all-melds').innerHTML='';return;}
-  document.getElementById('all-melds').innerHTML=`<div style="font-size:11px;color:#666;margin-bottom:4px;">Melds on table</div>
-  <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;">
-    ${G.players.filter(p=>p.melds.length>0).map(p=>
-      p.melds.map(m=>{
-        sortMeld(m);
-        return`<div style="background:#fff;border-radius:8px;border:0.5px solid rgba(0,0,0,0.15);padding:4px 6px;display:inline-flex;align-items:center;gap:3px;">
-          <span style="font-size:10px;color:#999;margin-right:2px;">${p.name.charAt(0)}:</span>
-          ${m.cards.map(c=>rcSmall(c)).join('')}
-          <span style="font-size:10px;color:#666;margin-left:2px;">${mPts(m)}</span>
-        </div>`;
-      }).join('')
-    ).join('')}
-  </div>`;
+  document.getElementById('all-melds').innerHTML=
+    G.players.filter(p=>p.melds.length>0).map(p=>{
+      const isMe=p.id===G.currentIdx;
+      const isHuman=!p.type||p.type==='human';
+      const label=isMe?'You':p.name;
+      const bg=isMe?'#f0f4f8':'#f8f8f6';
+      const border=isMe?'#b0c4de':'rgba(0,0,0,0.1)';
+      p.melds.forEach(m=>sortMeld(m));
+      return`<div style="margin-bottom:4px;padding:4px 6px;background:${bg};border-radius:8px;border:0.5px solid ${border};">
+        <div style="font-size:10px;font-weight:600;color:#555;margin-bottom:3px;">${label}${p.id===G.dealerIdx?' ✦':''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+          ${p.melds.map(m=>`<div style="display:inline-flex;align-items:center;gap:2px;background:#fff;border-radius:6px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.1);">
+            ${m.cards.map(c=>rcSmall(c)).join('')}
+            <span style="font-size:9px;color:#888;margin-left:2px;">${mPts(m)}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
 }
 
 function rcSmall(c){
@@ -1026,7 +1068,7 @@ function labelSelectedJoker(){
   const current=joker.declaredAs||'';
   const val=prompt(`Label this joker (e.g. A♥, 7♠, 10♦):\nCurrent: ${current||'(none)'}`,current);
   if(val!==null){
-    joker.declaredAs=val.trim()||null;
+    joker.declaredAs=normDecl(val.trim())||null;
     renderHand();
   }
 }
@@ -1272,7 +1314,7 @@ function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   document.getElementById('meld-err').style.color='#c0392b';
-  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=i.value.trim()||j.declaredAs||null;});
+  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=normDecl(i.value.trim())||j.declaredAs||null;});
 
   if(G.mustMeldTopId!==null){
     if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
@@ -1429,9 +1471,18 @@ function openRedeem(){
   window._jkrs=jkrs;
 }
 
+function normDecl(s){
+  if(!s)return s;
+  s=s.trim();
+  const sm={'S':'♠','H':'♥','D':'♦','C':'♣','s':'♠','h':'♥','d':'♦','c':'♣','♠':'♠','♥':'♥','♦':'♦','♣':'♣'};
+  const last=s[s.length-1];
+  if(sm[last]) return s.slice(0,-1).toUpperCase()+sm[last];
+  return s.toUpperCase();
+}
+
 function confirmRedeem(i){
   const it=window._jkrs[i],cp=G.players[G.currentIdx];
-  const nat=cp.hand.find(c=>!c.wild&&cLbl(c)===it.card.declaredAs);
+  const nat=cp.hand.find(c=>!c.wild&&cLbl(c)===normDecl(it.card.declaredAs));
   if(!nat){document.getElementById('redeem-err').textContent=`Need ${it.card.declaredAs} in hand.`;return;}
   // Replace the specific joker in the meld with the natural card (match by card ID)
   const jokerCard=G.players[it.pi].melds[it.mi].cards[it.ci];
@@ -1443,6 +1494,16 @@ function confirmRedeem(i){
   cp.hand.push(jokerToReturn);
   // Add to end of handOrder
   if(cp.handOrder) cp.handOrder.push(jokerToReturn.id);
+  // Notify all players of the redemption
+  const redeemerLabel=cLbl(nat);
+  if(!G.jokerNotifications) G.jokerNotifications=[];
+  const seenBy=new Set([G.currentIdx]);
+  G.jokerNotifications.push({
+    msg:`${cp.name} redeemed a Joker using ${redeemerLabel} — Joker (declared as ${jokerToReturn.declaredAs||'?'}) is now in ${cp.name}'s hand`,
+    seenBy, id:Date.now()
+  });
+  // Show modal immediately to current player too
+  showJokerNotifyModal(`${cp.name} redeemed: Joker (${jokerToReturn.declaredAs||'?'}) ← ${redeemerLabel}`);
   G.sel=[];cm('m-redeem');updateGame();
 }
 
