@@ -503,6 +503,8 @@ function startGame(){
     singleHumanMode,allCPUMode,cpuTurnId:0,
     optPC:document.getElementById('opt-pc').checked,
     optRM:document.getElementById('opt-rm').checked,
+    optShowCPU:document.getElementById('opt-show-cpu')?.checked!==false,
+    cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
     log:[],       // hand history entries
     snapshot:null // state at start of current hand (for undo/restart)
   };
@@ -670,7 +672,7 @@ function showHandoff(){
         setTimeout(()=>runCPUTurn(),G.allCPUMode?400:600);
       } else {
         // Hidden mode: execute CPU turn instantly, no visual
-        runCPUInstant();
+        setTimeout(()=>runCPUInstant(),0);
       }
       return;
     } else {
