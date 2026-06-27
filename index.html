@@ -500,7 +500,7 @@ function startDebugDeal(){
     handFirstPlayer:0,swapFirst:null,reordering:false,
     optPC:document.getElementById('opt-pc').checked,
     optRM:document.getElementById('opt-rm').checked,
-    optShowCPU:document.getElementById('opt-show-cpu')?.checked!==false,
+    optShowCPU:document.getElementById('opt-show-cpu')?.checked||false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
     log:[],snapshot:null,savedDeck:null,cutterIdx:0,cpuTurnId:0,jokerNotifications:[],
     keptByCutter:[],cutterBot:null,topPart:[],botPart:[]
@@ -614,7 +614,7 @@ function startGame(){
     singleHumanMode,allCPUMode,cpuTurnId:0,
     optPC:document.getElementById('opt-pc').checked,
     optRM:document.getElementById('opt-rm').checked,
-    optShowCPU:document.getElementById('opt-show-cpu')?.checked!==false,
+    optShowCPU:document.getElementById('opt-show-cpu')?.checked||false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
     log:[],       // hand history entries
     snapshot:null // state at start of current hand (for undo/restart)
