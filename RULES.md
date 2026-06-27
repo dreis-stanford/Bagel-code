@@ -60,7 +60,7 @@ The player who went out deals the next hand. If a hand is dead (draw pile runs o
 Each turn follows this sequence:
 
 1. **Draw** — draw from the deck or pick up the entire discard pile (see Pile Pickup rules).
-2. **Redeem Jokers** — optionally redeem jokers from any meld (yours or another player's).
+2. **Redeem Jokers** — optionally redeem jokers from any meld (yours or another player's). The redeemed joker must be immediately melded (see Joker Redemption).
 3. **Meld / Add to Melds** — play cards to the table.
 4. **Discard** — you must always end your turn with a discard, including when going out.
 
@@ -94,8 +94,9 @@ The order in which cards are selected for a run defines the sequence (low to hig
 ### Joker Redemption
 - After drawing (step 1 of your turn), a player may redeem a Joker from any meld on the table — yours or another player's.
 - To redeem, provide the natural card the Joker represents (the **redeemer**) and take the Joker into your hand.
-- The Joker retains its declaration and may be re-melded or declared differently in a new meld.
-- In a set, the Joker's represented card must have been declared at the time of melding so it can be specifically redeemed.
+- **The redeemed Joker must be immediately melded** — with at least 2 natural cards from your hand, or by adding it to one of your existing melds. You cannot hold a redeemed Joker in your hand and discard without melding it.
+- The Joker retains its declaration from the original meld and may be re-declared when melded into a new context.
+- When a Joker is melded, all other players are notified of its declaration.
 
 ---
 
@@ -112,7 +113,7 @@ The order in which cards are selected for a run defines the sequence (low to hig
 
 ## Calling Cards
 
-Once you have melded at least once, you must **call** (announce how many cards you hold) before discarding if either of the following is true:
+Once you have melded at least once, you must **call** (announce how many cards you hold after discarding) before discarding if either of the following is true:
 
 - You will have **3 or fewer cards** remaining after discarding.
 - A **single drawn card** could result in you going out (i.e. your current hand minus one discard can be completely melded).
@@ -123,7 +124,7 @@ Additional rules:
 
 - You must call **just before discarding** — not earlier in your turn.
 - Your call **takes effect next turn** — you cannot go out on the same turn you called.
-- You must uncall if your situation changes and you no longer meet either condition (e.g. you pick up the pile).
+- You must uncall if your situation changes and you no longer meet either condition.
 - **Exception:** If you have not yet melded anything, calling rules do not apply — this protects Bagel and Dream hands.
 - **Exception:** If you pick up the discard pile and it contains multiple cards that allow you to go out immediately, you may do so without a prior call.
 
@@ -220,7 +221,7 @@ The highest scorer (after all bonuses) collects from each other player individua
 ## Quick Reference: Turn Checklist
 
 1. Draw from deck **OR** pick up entire discard pile (must immediately meld top card with 2 naturals).
-2. Optionally redeem Joker(s) from any meld using the redeemer card.
+2. Optionally redeem Joker(s) from any meld — **must immediately meld the redeemed Joker**.
 3. Meld and/or add to your own melds.
 4. Call if required: ≤3 cards after discard, or one draw could take you out. Only after first meld. Your responsibility — never automatic.
 5. Discard one card (mandatory, even when going out).

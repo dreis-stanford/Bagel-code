@@ -82,13 +82,28 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Handoff screen only in all-human mode; single-human+CPU goes direct to game screen
 - Hidden CPU mode: game screen shown BEFORE runCPUInstant is called
 
+## Recent fixes (this session)
+- CPU hand cards now hidden in main area when Show CPU cards OFF (renderHand shows card backs)
+- CPU card backs shown: red (deck 0) or blue (deck 1) gradient
+- CPU card count hidden in sidebar when Show CPU cards OFF
+- CPU hand penalty hidden in "This hand" sidebar when Show CPU cards OFF
+- "You" label in melds now means human player, not current turn player
+- CPU joker declaration now sends notification to human player (cpuMeldAsync + cpuMeld)
+- Joker redemption now requires immediate meld (G.redeemMustMeld flag blocks discard)
+- Calling modal title fixed (was showing "Joker declaration")
+- Calling card count defaults to hand.length-1 (after discard)
+- Calling notification modal more prominent (larger, orange border)
+- Continue ▶ button upgraded to primary button (larger, more visible)
+- rcBack(deck, sm) function added for face-down card rendering
+
 ## Known issues / next session
 1. **Deck duplication** — believed fixed (cpuDraw table natural handling); verify with auditDeck() during testing
 2. **Gambler hang** — mitigated with iter limit + caching; monitor tester reports
 3. **Self-scoring** — not yet built
 4. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
 5. **Xcode/SwiftUI transition** — planned after prototype is stable
-6. **Call/Discard combined button** — currently Call and Discard are separate steps. Consider a single "Call & Discard" button that handles both actions at once. The call count could be shown inline (e.g. "Discard (calling 2)") to reduce the number of taps. Current two-step flow works but is awkward.
+6. **Joker redemption — add to existing meld** — currently must meld with 2 naturals from hand; should also allow adding redeemed joker to an existing meld (similar to pile pickup using table naturals). Rule is documented correctly; enforcement partially done.
+7. **Call/Discard combined button** — currently Call and Discard are separate steps. Consider a single "Call & Discard" button that handles both actions at once. The call count could be shown inline (e.g. "Discard (calling 2)") to reduce the number of taps. Current two-step flow works but is awkward.
 7. **CPU hand count visible when Show CPU cards is OFF** — the sidebar currently shows card counts for CPU players even when their cards should be hidden. In hidden mode, CPU card counts should not be displayed (only show that it's their turn and what they discarded/melded). Fix: in renderOthers, when !G.optShowCPU, hide the 🃏 count for CPU players.
 
 ## Session workflow

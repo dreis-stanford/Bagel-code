@@ -507,7 +507,7 @@ function startDebugDeal(){
     playerCount:n,
     players:names.map((name,i)=>({name,id:i,hand:[...specifiedHands[i]],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:discardCard?[discardCard]:[],hand:0,dealerIdx:0,currentIdx:0,
-    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
+    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,redeemMustMeld:false,drewCard:false,
     handFirstPlayer:0,swapFirst:null,reordering:false,
     optPC:document.getElementById('opt-pc').checked,
     optRM:document.getElementById('opt-rm').checked,
@@ -620,7 +620,7 @@ function startGame(){
     playerCount:n,
     players:names.map((name,i)=>({name,id:i,type:types[i],hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
-    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,drewCard:false,
+    phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,redeemMustMeld:false,drewCard:false,
     handFirstPlayer:1,swapFirst:null,reordering:false,
     singleHumanMode,allCPUMode,cpuTurnId:0,
     optPC:document.getElementById('opt-pc').checked,
@@ -1519,7 +1519,12 @@ function confirmMeld(){
   });
 
   if(G.mustMeldTopId!==null){
-    if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
+    if(!sel.some(c=>c.id===G.mustMeldTopId)){
+      document.getElementById('meld-err').textContent=G.redeemMustMeld
+        ?'Must include the redeemed Joker in this meld!'
+        :'Must include the top discard pile card!';
+      return;
+    }
     const preselInMeld=sel.filter(c=>G.mustNaturalIds?.has(c.id));
     if(preselInMeld.length<2){document.getElementById('meld-err').textContent='Must include the 2+ naturals you selected during pickup.';return;}
   }
@@ -1530,7 +1535,7 @@ function confirmMeld(){
   const newMeld2={cards:sel,type:v.type};sortMeld(newMeld2);cp.melds.push(newMeld2);
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   G.sel=[];cp.hasEverMelded=true;
-  if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;}
+  if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;G.redeemMustMeld=false;}
   // Notify all players of any joker declarations in this meld
   const declaredJokers=sel.filter(c=>c.joker&&c.declaredAs);
   if(declaredJokers.length>0) addJokerNotification(cp.name, declaredJokers);
@@ -1686,32 +1691,33 @@ function confirmRedeem(i){
   const it=window._jkrs[i],cp=G.players[G.currentIdx];
   const nat=cp.hand.find(c=>!c.wild&&cLbl(c)===normDecl(it.card.declaredAs));
   if(!nat){document.getElementById('redeem-err').textContent=`Need ${it.card.declaredAs} in hand.`;return;}
-  // Replace the specific joker in the meld with the natural card (match by card ID)
   const jokerCard=G.players[it.pi].melds[it.mi].cards[it.ci];
   if(jokerCard.id!==it.card.id){document.getElementById('redeem-err').textContent='Joker mismatch — please try again.';return;}
   G.players[it.pi].melds[it.mi].cards[it.ci]=nat;
   cp.hand=cp.hand.filter(c=>c.id!==nat.id);
-  // Preserve the joker's declaredAs so it can be used again
   const jokerToReturn={...jokerCard};
   cp.hand.push(jokerToReturn);
-  // Add to end of handOrder
   if(cp.handOrder) cp.handOrder.push(jokerToReturn.id);
-  // Notify all players of the redemption
+  // Notify all players
   const redeemerLabel=cLbl(nat);
   if(!G.jokerNotifications) G.jokerNotifications=[];
   const seenBy=new Set([G.currentIdx]);
   G.jokerNotifications.push({
-    msg:`${cp.name} redeemed a Joker using ${redeemerLabel} — Joker (declared as ${jokerToReturn.declaredAs||'?'}) is now in ${cp.name}'s hand`,
+    msg:`${cp.name} redeemed a Joker using ${redeemerLabel} — Joker (${jokerToReturn.declaredAs||'?'}) must now be melded`,
     seenBy, id:Date.now()
   });
-  // Show modal immediately to current player too
-  showJokerNotifyModal(`${cp.name} redeemed: Joker (${jokerToReturn.declaredAs||'?'}) ← ${redeemerLabel}`);
+  showJokerNotifyModal(`Joker (${jokerToReturn.declaredAs||'?'}) redeemed using ${redeemerLabel}.\nYou must now meld the Joker — with 2+ naturals from hand, or add it to an existing meld.`);
+  // Enforce: joker must be melded before discarding
+  G.mustMeldTopId=jokerToReturn.id;
+  G.mustNaturalIds=null; // no specific naturals required — just must be melded
+  G.redeemMustMeld=true;
   G.sel=[];cm('m-redeem');updateGame();
 }
 
 function doDiscard(){
   const cp=G.players[G.currentIdx];
   if(G.sel.length!==1){setWarn('Select exactly one card to discard.');return;}
+  if(G.redeemMustMeld){setWarn('You must meld the redeemed Joker before discarding.');return;}
   const card=cp.hand.find(c=>c.id===G.sel[0]);if(!card)return;
   const goOut=cp.hand.length===1;
   if(isSp(card)&&!goOut){setWarn(`${cLbl(card)} is special — can only discard it when going out.`);return;}
@@ -1855,7 +1861,10 @@ function cpuMeldAsync(cp,speed,onDone){
       const nm={cards:meld,type:v.type};sortMeld(nm);cp.melds.push(nm);
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
-      cp.hasEverMelded=true;updateGame();
+      cp.hasEverMelded=true;
+      const djk=meld.filter(c=>c.joker&&c.declaredAs);
+      if(djk.length) addJokerNotification(cp.name,djk);
+      updateGame();
       setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
     }
   }
@@ -1979,6 +1988,7 @@ function cpuMeld(cp){
         const newMeld4={cards:meld,type:v.type};sortMeld(newMeld4);cp.melds.push(newMeld4);
         meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+        const djk3=meld.filter(c=>c.joker&&c.declaredAs);if(djk3.length)addJokerNotification(cp.name,djk3);
         cp.hasEverMelded=true;
         melded=true;
       }
@@ -2208,7 +2218,7 @@ function endTurnHO(){
   cp.hadMeldsAtTurnStart=cp.hasEverMelded;
   cp.calledThisTurn=false;
   clearCPUAction();
-  G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;
+  G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.redeemMustMeld=false;G.mustMeldTopId=null;
   G.currentIdx=(G.currentIdx+1)%G.players.length;
   G.phase='draw';clearSt();
   const next=G.players[G.currentIdx];
