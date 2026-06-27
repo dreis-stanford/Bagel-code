@@ -93,7 +93,8 @@ The order in which cards are selected for a run defines the sequence (low to hig
 
 ### Joker Redemption
 - After drawing (step 1 of your turn), a player may redeem a Joker from any meld on the table — yours or another player's.
-- To redeem, provide the natural card the Joker represents and take the Joker into your hand.
+- To redeem, provide the natural card the Joker represents (the **redeemer**) and take the Joker into your hand.
+- The Joker retains its declaration and may be re-melded or declared differently in a new meld.
 - In a set, the Joker's represented card must have been declared at the time of melding so it can be specifically redeemed.
 
 ---
@@ -101,8 +102,9 @@ The order in which cards are selected for a run defines the sequence (low to hig
 ## Pile Pickup
 
 - Only the top card of the discard pile is visible. The rest must be remembered.
-- To pick up the pile, you must immediately meld the top card using at least 2 natural cards already in your hand.
+- To pick up the pile, you must immediately meld the top card using at least 2 natural cards already in your hand or already melded on the table.
 - You take the entire pile into your hand, but your first action must be melding that top card with those 2 naturals.
+- If the 2 naturals are from an existing meld on the table, the top card is added to that existing meld rather than creating a new one.
 - Additional cards from the pile or your hand may be included in that meld or subsequent melds.
 - Wilds do not count as naturals for the 2-natural pickup requirement.
 
@@ -110,21 +112,20 @@ The order in which cards are selected for a run defines the sequence (low to hig
 
 ## Calling Cards
 
-Once you have melded at least one card, you must **call** (announce how many cards you hold) at the end of your turn if either of the following is true:
+Once you have melded at least once, you must **call** (announce how many cards you hold) before discarding if either of the following is true:
 
-- You have 3 or fewer cards remaining in your hand after discarding.
-- A single drawn card could result in you going out (through melding, joker redemption, or any combination).
+- You will have **3 or fewer cards** remaining after discarding.
+- A **single drawn card** could result in you going out (i.e. your current hand minus one discard can be completely melded).
 
-
-
-**Calling is always the player's responsibility** — it is never automatic. If you fail to call when required, you cannot go out on your next turn (your discard will still be accepted, but going out on the following turn will be blocked).
+**Calling is always the player's responsibility** — it is never automatic. Failure to call when required means you cannot go out on your next turn (your discard still stands, but going out is blocked).
 
 Additional rules:
 
-- You must uncall if your situation changes and you no longer meet either condition.
-- Re-call only if you play a card that changes your hand count.
-- **Exception:** If you pick up a multi-card pile that unexpectedly puts you out, you may go out without a prior call.
-- **Exception:** If you have not yet melded anything, calling rules do not apply (this protects Bagel and Dream hands).
+- You must call **just before discarding** — not earlier in your turn.
+- Your call **takes effect next turn** — you cannot go out on the same turn you called.
+- You must uncall if your situation changes and you no longer meet either condition (e.g. you pick up the pile).
+- **Exception:** If you have not yet melded anything, calling rules do not apply — this protects Bagel and Dream hands.
+- **Exception:** If you pick up the discard pile and it contains multiple cards that allow you to go out immediately, you may do so without a prior call.
 
 ---
 
@@ -171,7 +172,7 @@ The player who goes out receives +100 points added to their hand score.
 
 | Bonus | Condition |
 |---|---|
-| Perfect Cut | Cut exactly 13×N+1 cards (optional rule, not universal) |
+| Perfect Cut | Cut exactly 13×N+1 cards (optional rule) |
 | No Wilds | Go out with no wild cards in your melds |
 | All Below | Go out with only 3–7 cards (and/or wilds); Q♠ cannot appear |
 | All Above | Go out with only 8–A cards (and/or wilds); Q♠ counts as above |
@@ -182,8 +183,8 @@ Multiple checks can be earned in one hand (e.g., All Below + No Wilds = 2 checks
 ### Bagel (worth 250 points at final tally)
 
 - Go out with all 13 cards at once in a single turn, but **not** on the first turn (that would be a Dream).
-- Marked with a circle around the hand score on the scorecard.
-- Dream and Bagel are mutually exclusive. You may sit on a Dream hand and attempt a Bagel on a later turn — at your own risk.
+- Marked with a circle ⊙ around the hand score on the scorecard.
+- Dream and Bagel are mutually exclusive.
 - A Bagel hand can also earn a No Wilds check if no wilds were used.
 
 ---
@@ -192,7 +193,7 @@ Multiple checks can be earned in one hand (e.g., All Below + No Wilds = 2 checks
 
 The game ends when any player reaches 1,000 points (based on running scores, before checks and bagels are added).
 
-1. **Award the 200-point end-game bonus:** goes to the player who went out on the final hand. If that player did not trigger 1,000 points but others did, the highest scorer among those who crossed 1,000 receives the bonus. If tied, all tied players receive 200 points.
+1. **Award the 200-point end-game bonus** to the player who went out on the final hand.
 2. **Add Checks** (×100 pts) and **Bagels** (×250 pts) to all players' scores.
 3. **Determine the highest scorer** (now including checks and bagels). This player wins the final money settlement.
 
@@ -206,11 +207,11 @@ The game ends when any player reaches 1,000 points (based on running scores, bef
 
 ### Final Settlement
 
-The highest scorer (after all bonuses) collects from each other player individually based on the point difference:
+The highest scorer (after all bonuses) collects from each other player individually:
 
-- Rate: 5¢ per 500 points difference.
-- **Default rule:** round down (e.g., 955 points difference = 1 × 5¢ = 5¢).
-- **Optional rule:** round to nearest 500 (250+ rounds up; e.g., 750 → 15¢, 250 → 5¢, 955 → 10¢).
+- Rate: **5¢ per 500 points** difference.
+- **Default rule:** round down.
+- **Optional rule:** round to nearest 500 (250+ rounds up).
 
 > Points determine who wins the settlement, but money (per-hand + final) determines who wins the game.
 
@@ -218,8 +219,8 @@ The highest scorer (after all bonuses) collects from each other player individua
 
 ## Quick Reference: Turn Checklist
 
-1. Draw from deck **OR** pick up entire discard pile (must immediately meld top card with 2 naturals from hand).
-2. Optionally redeem Joker(s) from any meld.
-3. Meld and/or add to your own melds (as much as you want).
-4. Discard one card (mandatory, even when going out).
-5. Call if you have ≤3 cards after discarding, or if one card could take you out — only required after your first meld. Calling is your responsibility and is never automatic.
+1. Draw from deck **OR** pick up entire discard pile (must immediately meld top card with 2 naturals).
+2. Optionally redeem Joker(s) from any meld using the redeemer card.
+3. Meld and/or add to your own melds.
+4. Call if required: ≤3 cards after discard, or one draw could take you out. Only after first meld. Your responsibility — never automatic.
+5. Discard one card (mandatory, even when going out).

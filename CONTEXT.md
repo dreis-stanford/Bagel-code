@@ -1,84 +1,97 @@
 # Bagel — Development Context
 
 ## What this is
-A family card game called "Bagel" being built as a web prototype (single HTML file) with the goal of eventually publishing as an iPad app via Xcode/SwiftUI. Development is happening in Claude chat sessions using vanilla HTML/CSS/JavaScript.
+A family card game called "Bagel" built as a single HTML/JS/CSS file, targeting eventual iPad App Store publication via Xcode/SwiftUI. Development in Claude chat sessions.
 
 ## Repository
 - GitHub: https://github.com/dreis-stanford/Bagel-code (public)
 - Live: https://dreis-stanford.github.io/Bagel-code
-- Files: `index.html` (game), `RULES.md` (rules)
+- Files: `index.html` (game), `RULES.md` (rules), `CONTEXT.md` (this file)
 
 ## Game overview
-- 106-card deck (2× standard 52 + 2 jokers)
-- 3–5 players best; 2 possible
-- Two scoring systems: **points** (cumulative, game ends at 1000) and **money** (collected per hand and at game end)
-- Winner = most money, not most points
+- 106-card deck (2× standard 52 + 2 jokers, each card has `deck:0` or `deck:1` property)
+- 3–5 players; two scoring systems: points (game ends at 1000) and money (winner = most money)
 - See RULES.md for full rules
 
-## Current prototype status (bagel_v3.html)
-Full playable prototype with:
-- Deal, cut (slider UI), first-discard phase
-- Full turn loop: draw → redeem joker → meld → discard
-- Pile pickup with 2-natural requirement (hand or table melds)
-- Meld validation: sets (3–4), runs (3+), wild rules, Q♠ position check
-- Card order = wild placement intent in runs
-- Joker declaration (declared as specific card), redemption, label-in-hand
-- Joker notification modal shown to all players when joker is melded
-- Calling cards (formerly "declaring"): only before discard, cannot go out same turn
-- Scoring: points, money, checks (×100), bagels (×250), dream
-- End of hand scorecard with circled bagel scores, ✓ check ticks
-- Full scorecard in Scores modal (all hands, subtotals)
-- Game ends automatically at 1000 points
-- **Conservative CPU player** — melds greedily, picks up pile if valuable, discards highest penalty
-- Three game modes: all-human (pass & play), one human + CPU (continuous), all CPU (watch)
-- Show CPU actions checkbox + speed selector (Fast/Medium/Slow)
-- CPU auto-cut when cutter is CPU
-- Debug deal screen — specify any player's hand and discard top card
-- Undo last hand / restart current hand (in Scores modal)
-- Two-column layout (game main + sidebar with live scores)
-- Drag-to-reorder hand (hold & drag), tap to select
-- Compact inline meld display with sorted runs
-
 ## Terminology
-- "Calling cards" = announcing how many cards you hold (formerly "declaring")
-- "Declaring a joker" = stating what card a joker represents (keep this term)
+- "Calling cards" = announcing card count before discarding (formerly "declaring")
+- "Declaring a joker" = stating what card joker represents (keep this term)
+- "Redeemer" = natural card matching joker's declaration
 - Special cards: Deuces (wild), Jokers (wild), Queens of Spades (special, not wild)
 
-## Known bugs / issues to fix next session
-1. **Show CPU cards** — currently "Show CPU actions" hides hand. Change to "Show CPU cards": when ON, show CPU hand and cut cards (everything CPU sees). When OFF, hide those.
-2. **Pile pickup table naturals** — the `_fromMeldIdx` approach for using table melds as naturals may have edge cases; needs more testing.
-3. **Card selection on iPad** — using `onmousedown` + `sourceCapabilities` to avoid double-fire on touch; may still have issues on some devices.
-4. **CPU missed call** — CPU doesn't handle the calling requirement properly (it auto-calls via code but the timing rule isn't enforced for CPU).
+## Current status — shared for beta testing
+URL shared with trusted testers: https://dreis-stanford.github.io/Bagel-code
 
-## Next features to build
-1. **Gambler CPU player** — holds cards hoping for a bagel; only melds if:
-   - Someone else calls (threat that they might go out)
-   - A bagel is no longer possible (hand too large/diverse)
-   - NOTE: picking up pile only helps bagel if ALL pile+hand cards can be melded out leaving 1 discard
-2. **Self-scoring** — at end of hand, each player reviews/confirms their own score before it's committed; friendly correction if disputed
-3. **Show CPU cards option** — see CPU hand for debugging
+## Features implemented
+- Full game flow: deal, cut, play, score, end game at 1000 pts
+- All meld types with wild card rules, Q♠ position check
+- Wild position in runs determined by selection order (left=low, right=high)
+- Joker declaration (declared as specific card), redemption with normDecl() normalization
+- Joker notification modal on meld; redemption notification to all players
+- Calling cards: only before discard, cannot go out same turn as calling
+- shouldCall(cp) — full rule: ≤3 cards after discard OR canBagel(hand) returns non-null
+- missedDeclaration only set on non-going-out turns
+- Scoring: points, money, checks (×100 each), bagels (×250, circled ⊙), dream (check ✓)
+- Full scorecard with all hands, subtotals, checks/bagels visible
+- Game ends automatically at 1000 points
+- Conservative CPU: melds greedily, smart pile pickup, discards highest penalty
+- Gambler CPU: holds for bagel, bails if someone calls or bagel impossible
+- canBagel/canMeldAll: recursive search with 2000-iter limit + canBagelCached() per turn
+- CPU names: Conservative = Plain/Pumpernickel/Egg/Cinnamon-Raisin; Gambler = Poppy/Everything/Garlic/Onion
+- Auto-names when switching player type in setup
+- Three game modes: all-human (pass & play), one human + CPU (continuous), all CPU (watch)
+- Show CPU cards checkbox (default OFF — shows melds/discards but hides hand values)
+- CPU speed selector: Fast(800ms)/Medium(1600ms)/Slow(2400ms); all-CPU at half speed
+- CPU auto-cut; shows cut result briefly when Show CPU cards is ON
+- Async CPU turns: one meld at a time with pauses; Continue ▶ button after each CPU discard
+- Debug deal screen; Audit Deck button in Scores → Debug (shows popup, no console needed)
+- auditDeck() tracks card integrity using deck:0/deck:1 property
+- Discard history: last N-1 cards shown beside top card on game screen
+- Recent discards shown on handoff screen (last N cards, one full round)
+- Calling card loud modal notification to all players
+- Joker declaration/redemption modal notification queued per player
+- Two-column layout: game main + sidebar (players, hand penalty private)
+- Tap to select, hold & drag to reorder hand (8px threshold)
+- sortMeld sorts runs by declaredAs rank for wilds
+- cancelMeld() clears _pendingDecl to prevent joker pre-mutation on cancel
+- Rules reference modal with two tabs: Game Rules and Playing on Screen
+- Feedback button: captures game state + user description, copy to clipboard or email
 
-## Architecture notes (for Xcode transition)
-- All game logic is in vanilla JS — translates directly to Swift structs/functions
-- Card order = wild placement intent (important for run validation)
-- `tryRun()` returns `{valid, suit, assignedRanks}` — assigns ranks to wilds based on position
-- Q♠ position check in spades runs: only blocks if NO valid placement avoids rank 12
-- `G` object = full game state; snapshot/restore used for undo
-- Player types: `'human'`, `'conservative'` (more to come: `'gambler'`)
-- `singleHumanMode` / `allCPUMode` flags control handoff screen behavior
-- Drag-to-reorder uses HTML5 drag API + touch events with 8px movement threshold
+## Architecture
+- `G` object = full game state
+- Card: `{id, deck, rank, suit, wild, joker, qs, declaredAs}`
+- `tryRun()` → `{valid, suit, assignedRanks}` assigns ranks to wilds by selection order
+- `valMeld()` only sets declaredAs if `!card.declaredAs` (won't overwrite user's declaration)
+- `canBagel(hand)` / `canMeldAll(hand,_iters)` — recursive with 2000-iter limit, works on copies
+- `canBagelCached(cp)` — cached by playerId+turnCount+handLength
+- `shouldCall(cp)` — ≤3 cards after discard OR canBagelCached returns non-null
+- `normDecl(s)` — normalizes suit input (3C→3♣, 10s→10♠)
+- Player types: 'human', 'conservative', 'gambler'
+- `singleHumanMode` / `allCPUMode` in G control handoff/flow behavior
+- `cpuTurnId` guard prevents stale async callbacks after hand ends
+- `auditDeck()` — checks all card locations for duplicates/missing; callable in-game
 
-## Key design decisions made
-- Card order in selection = wild placement intent (player reorders hand to specify)
-- Pile pickup: top card must be melded with 2+ naturals (from hand OR table melds); if table naturals used, top card extends existing meld rather than creating duplicate
-- Calling: only before discard, cannot go out same turn as calling
-- Bagel = circled score on scorecard; checks = ✓ ticks next to score
-- Dream = check (100pts), not bagel
-- Handoff screen only in all-human mode; single-human + CPU goes direct to game
-- No "watch" player type — all-CPU auto-detected when no humans selected
-- CPU speed: Fast=800ms, Medium=1600ms, Slow=2400ms; all-CPU runs at half speed
+## Key design decisions
+- Card order in selection = wild placement intent in runs
+- Pile pickup: 2+ naturals from hand OR table melds; if table naturals used, extends existing meld (not duplicate)
+- Calling: only before discard, cannot go out same turn as calling, blocked next turn if missed
+- Bagel = circled score ⊙ (+250); Dream = check ✓ (+100); both mutually exclusive
+- Handoff screen only in all-human mode; single-human+CPU goes direct to game screen
+- Hand scores sidebar: table pts public for all, hand penalty shown only for current player
+- CPU pile pickup: separates hand cards from table naturals to avoid card duplication
 
-## File locations
-- Game: `/mnt/user-data/outputs/bagel_v3.html` (or `index.html` on GitHub)
-- Rules: `/mnt/user-data/outputs/RULES.md`
-- This file: `CONTEXT.md`
+## Known issues / next session priorities
+1. **Deck duplication** — believed fixed (cpuDraw table natural handling) but needs auditDeck() confirmation from testers
+2. **Gambler hang** — mitigated with 2000-iter limit and caching; monitor tester reports
+3. **Self-scoring** — not yet built (each player reviews own score before committing)
+4. **Show CPU cards** — works for hand; cut card peek shown when ON
+5. **Gambler strategy** — needs real-game testing; may need tuning of bail conditions
+6. **Xcode/SwiftUI transition** — planned after prototype is stable
+
+## Session workflow
+- Upload index.html + CONTEXT.md + RULES.md at session start
+- Edit /mnt/user-data/outputs/bagel_v3.html
+- Syntax check: node --check on extracted script
+- Download and push to GitHub as index.html
+- Test at https://dreis-stanford.github.io/Bagel-code (NOT in Claude artifact viewer)
+- Feedback from testers comes via copied game state logs
