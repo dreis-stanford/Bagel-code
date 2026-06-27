@@ -597,7 +597,6 @@ function onTypeChange(idx){
 }
 
 function startGame(){
-  try{
   const n=G.playerCount||4;
   const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
   const types=Array.from({length:n},(_,i)=>document.getElementById(`pt${i}`)?.value||'human');
@@ -621,7 +620,6 @@ function startGame(){
     snapshot:null // state at start of current hand (for undo/restart)
   };
   dealHand();
-  }catch(e){alert('startGame error: '+e.message+'\n'+e.stack);}
 }
 
 function snapshotPlayers(){
@@ -638,13 +636,11 @@ function restoreSnapshot(snap){
 }
 
 function dealHand(){
-  try{
   G.snapshot=snapshotPlayers(); // save state before this hand
   G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.savedDeck=null; // will be saved after cut
   showCut(shuffle(createDeck()));
-  }catch(e){alert('dealHand error: '+e.message+'\n'+e.stack);}
 }
 
 function showCut(deck){
@@ -787,6 +783,7 @@ function showHandoff(){
         setTimeout(()=>runCPUTurn(),G.allCPUMode?400:600);
       } else {
         // Hidden mode: execute CPU turn instantly, no visual
+        showSc('game');G.sel=[];updateGame();
         setTimeout(()=>runCPUInstant(),0);
       }
       return;
