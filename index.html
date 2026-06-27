@@ -86,6 +86,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
   <div style="text-align:center; padding: 2rem 0 1rem;">
     <div style="font-size: 52px; font-weight: 700; letter-spacing: -2px; color: #2E4057;">BAGEL</div>
     <p>The family card game</p>
+    <p style="font-size:13px;color:#666;max-width:360px;margin:0.5rem auto 0;">A card game for 3–5 players with its own unique blend of melding, strategy, and high-stakes bonus play. <button onclick="showRules('rules')" style="background:none;border:none;color:#2E4057;font-size:13px;text-decoration:underline;cursor:pointer;padding:0;">How to play ›</button></p>
   </div>
   <div style="background:#fff; border-radius:12px; border:0.5px solid rgba(0,0,0,0.15); padding:1.5rem; max-width:400px; margin:0 auto;">
     <h3>Number of players</h3>
@@ -108,7 +109,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       <input type="checkbox" id="opt-rm"> Round money to nearest 500 pts
     </label>
     <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
-      <input type="checkbox" id="opt-show-cpu" checked> Show CPU actions (hides hand, shows melds &amp; discards)
+      <input type="checkbox" id="opt-show-cpu"> Show CPU cards (reveals hand &amp; cut card peek)
     </label>
     <div style="display:flex;align-items:center;gap:8px;font-size:14px;margin-top:8px;">
       <span>CPU speed:</span>
@@ -162,7 +163,11 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       <div style="font-size:18px;font-weight:500;" id="g-hand"></div>
       <div class="muted" id="g-turn"></div>
     </div>
-    <button class="btn small" onclick="showScores()">Scores</button>
+    <div class="flex gap-8">
+      <button class="btn small" onclick="showRules('ui')">?</button>
+      <button class="btn small" onclick="showFeedback()">Feedback</button>
+      <button class="btn small" onclick="showScores()">Scores</button>
+    </div>
   </div>
   <div class="game-layout">
     <!-- MAIN AREA -->
@@ -281,6 +286,52 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
   </div>
 </div>
 
+<!-- FEEDBACK MODAL -->
+<div id="m-feedback" class="modal-overlay" style="display:none;">
+  <div class="modal" style="max-width:480px;">
+    <div class="flex between center mb-1">
+      <h2>Send Feedback</h2>
+      <button class="btn small" onclick="cm('m-feedback')">Cancel</button>
+    </div>
+    <p style="font-size:13px;color:#666;margin-bottom:0.75rem;">Describe what happened, what you expected, or any suggestion. Game state is captured automatically.</p>
+    <div style="margin-bottom:6px;">
+      <label style="font-size:12px;font-weight:500;">Type</label>
+      <select id="fb-type" style="margin-bottom:0;">
+        <option value="bug">🐛 Bug / something broken</option>
+        <option value="rule">📋 Rule question / disagreement</option>
+        <option value="ux">💡 UI / experience suggestion</option>
+        <option value="other">💬 Other</option>
+      </select>
+    </div>
+    <div style="margin-bottom:6px;">
+      <label style="font-size:12px;font-weight:500;">Description</label>
+      <textarea id="fb-text" rows="4" placeholder="What happened? What did you expect?" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:8px;padding:8px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:0;"></textarea>
+    </div>
+    <div id="fb-preview" style="background:#f8f8f6;border-radius:8px;padding:8px;font-size:11px;color:#666;margin-bottom:0.75rem;max-height:120px;overflow-y:auto;white-space:pre-wrap;font-family:monospace;"></div>
+    <div id="fb-copy-msg" style="font-size:12px;color:#2e7d32;min-height:16px;margin-bottom:6px;"></div>
+    <div class="flex gap-8">
+      <button class="btn primary" style="flex:1;" onclick="copyFeedback()">📋 Copy to clipboard</button>
+      <button class="btn" style="flex:1;" onclick="emailFeedback()">✉️ Open in Mail</button>
+    </div>
+  </div>
+</div>
+
+<!-- RULES MODAL -->
+<div id="m-rules" class="modal-overlay" style="display:none;">
+  <div class="modal" style="max-width:500px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="flex between center mb-1">
+      <h2 id="rules-title">How to Play</h2>
+      <button class="btn small" onclick="cm('m-rules')">Close</button>
+    </div>
+    <!-- Tab buttons -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button id="tab-rules" class="btn primary" style="flex:1;font-size:13px;" onclick="showRules('rules')">Game Rules</button>
+      <button id="tab-ui" class="btn" style="flex:1;font-size:13px;" onclick="showRules('ui')">Playing on Screen</button>
+    </div>
+    <div id="rules-content" style="font-size:13px;line-height:1.6;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+
 <!-- REDEEM MODAL -->
 <div id="m-redeem" class="modal-overlay" style="display:none;">
   <div class="modal">
@@ -333,14 +384,13 @@ function auditDeck(){
   const dups=[...byId.entries()].filter(([,locs])=>locs.length>1);
   const missing=[];
   for(let id=0;id<106;id++) if(!byId.has(id)) missing.push(id);
-  console.log(`Total cards accounted: ${all.length} (expect 106)`);
-  console.log(`Deck 0: ${all.filter(({c})=>c.deck===0).length} (expect 53)`);
-  console.log(`Deck 1: ${all.filter(({c})=>c.deck===1).length} (expect 53)`);
+  const deck0=all.filter(({c})=>c.deck===0).length;
+  const deck1=all.filter(({c})=>c.deck===1).length;
   if(dups.length) console.warn('DUPLICATES:',dups.map(([id,locs])=>`id${id}(${locs.join(',')})`).join(' '));
   else console.log('No duplicates ✓');
   if(missing.length) console.warn('MISSING ids:',missing.join(','));
   else console.log('No missing cards ✓');
-  return{total:all.length,dups,missing};
+  return{total:all.length,deck0,deck1,dups,missing};
 }
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=0|Math.random()*(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
 function isSp(c){return c.wild||c.qs;}
@@ -1625,6 +1675,16 @@ function autoDecl(){
 }
 
 // Returns true if player is required to call before discarding
+// Cache canBagel result per turn to avoid recomputing on every render
+let _bagelCache={key:null,result:null};
+function canBagelCached(cp){
+  const key=cp.id+'-'+cp.turnCount+'-'+cp.hand.length;
+  if(_bagelCache.key===key) return _bagelCache.result;
+  const result=canBagel(cp.hand);
+  _bagelCache={key,result};
+  return result;
+}
+
 function shouldCall(cp){
   if(!cp.hasEverMelded) return false; // bagel/dream exception
   if(cp.declared) return false; // already called
@@ -1633,7 +1693,7 @@ function shouldCall(cp){
   // Condition 2: a single drawn card could complete the hand
   // i.e. current hand (minus one discard) can all be melded
   // Use canBagel which checks if hand can meld to exactly 1 leftover
-  if(cp.hand.length>=4 && canBagel(cp.hand)) return true;
+  if(cp.hand.length>=4&&cp.hand.length<=14&&canBagelCached(cp)) return true;
   return false;
 }
 
@@ -1923,8 +1983,7 @@ function cpuDiscard(cp){
 
 // Check if hand can be melded out leaving exactly 1 card to discard
 function canBagel(hand){
-  if(hand.length<2) return null;
-  // Work on copies to avoid mutating declaredAs on real cards
+  if(hand.length<2||hand.length>14) return null;
   const copies=hand.map(c=>({...c}));
   const idToOrig=new Map(hand.map(c=>[c.id,c]));
   for(const dc of copies){
@@ -1939,17 +1998,17 @@ function canBagel(hand){
   return null;
 }
 
-// Check if all cards can be completely melded (no leftovers)
-function canMeldAll(hand){
+function canMeldAll(hand,_iters){
   if(hand.length===0) return true;
   if(hand.length<3) return false;
-  // Try all combos of 3 and 4
+  if(!_iters) _iters={n:0};
   for(let size=Math.min(4,hand.length);size>=3;size--){
     const combos=combinations(hand,size);
     for(const combo of combos){
+      if(++_iters.n>2000) return false; // bail if too expensive
       if(valMeld(combo).valid){
         const rest=hand.filter(c=>!combo.includes(c));
-        if(canMeldAll(rest)) return true;
+        if(canMeldAll(rest,_iters)) return true;
       }
     }
   }
@@ -1963,7 +2022,7 @@ function gamblerShouldBail(cp){
   // Bail if hand is too large to realistically bagel (>16 cards)
   if(cp.hand.length>16) return true;
   // Bail if we've had more than 4 turns without a bagel being possible
-  if(cp.turnCount>4&&!canBagel(cp.hand)) return true;
+  if(cp.turnCount>4&&!canBagelCached(cp)) return true;
   return false;
 }
 
@@ -2206,6 +2265,124 @@ function showFinal(){
   document.getElementById('final-content').innerHTML=html;
 }
 
+function buildGameContext(){
+  if(!G||!G.players) return 'Game not started.';
+  const cp=G.players[G.currentIdx];
+  const lines=[
+    `=== Bagel Feedback Context ===`,
+    `Hand: ${G.hand+1} | Turn: ${cp?.turnCount||0} | Phase: ${G.phase}`,
+    `Current player: ${cp?.name} (${cp?.type||'human'})`,
+    `Draw pile: ${G.drawPile.length} cards | Discard pile: ${G.discardPile.length} cards`,
+    `Top discard: ${G.discardPile.length?cLbl(G.discardPile[G.discardPile.length-1]):'(empty)'}`,
+    ``,
+    `Players:`,
+    ...G.players.map(p=>{
+      const hand=p.hand.map(c=>cLbl(c)).join(' ');
+      const melds=p.melds.map(m=>m.cards.map(c=>cLbl(c)).join(' ')).join(' | ');
+      return `  ${p.name} (${p.type||'human'}): hand=[${hand}] melds=[${melds||'none'}] pts=${p.points} called=${p.declared?p.declaredCount:'no'}`;
+    }),
+    ``,
+    `Scores: ${G.players.map(p=>`${p.name}=${p.points}pts ${p.money>=0?'+':''}${p.money.toFixed(1)}¢`).join(' | ')}`,
+    `Mode: ${G.singleHumanMode?'1 human + CPU':G.allCPUMode?'all CPU':'all human'}`,
+    `================================`,
+  ];
+  return lines.join('\n');
+}
+
+function showFeedback(){
+  document.getElementById('fb-text').value='';
+  document.getElementById('fb-copy-msg').textContent='';
+  document.getElementById('fb-preview').textContent=buildGameContext();
+  document.getElementById('m-feedback').style.display='flex';
+}
+
+function buildFeedbackText(){
+  const type=document.getElementById('fb-type').value;
+  const desc=document.getElementById('fb-text').value.trim();
+  const typeLabel={'bug':'Bug','rule':'Rule question','ux':'UI suggestion','other':'Other'}[type]||type;
+  return `[Bagel Feedback — ${typeLabel}]\n\n${desc||'(no description)'}\n\n${buildGameContext()}`;
+}
+
+function copyFeedback(){
+  const text=buildFeedbackText();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      document.getElementById('fb-copy-msg').textContent='✓ Copied! Paste into email, Notes, or Messages.';
+    }).catch(()=>fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text){
+  // Fallback for browsers without clipboard API
+  const ta=document.createElement('textarea');
+  ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.select();
+  try{document.execCommand('copy');document.getElementById('fb-copy-msg').textContent='✓ Copied!';}
+  catch(e){document.getElementById('fb-copy-msg').textContent='Could not copy — please select and copy the text above manually.';}
+  document.body.removeChild(ta);
+}
+
+function emailFeedback(){
+  const text=buildFeedbackText();
+  const subject=encodeURIComponent('Bagel game feedback');
+  const body=encodeURIComponent(text);
+  window.location.href=`mailto:?subject=${subject}&body=${body}`;
+}
+
+function showRules(tab){
+  tab=tab||'rules';
+  document.getElementById('m-rules').style.display='flex';
+  document.getElementById('tab-rules').className=tab==='rules'?'btn primary':'btn';
+  document.getElementById('tab-ui').className=tab==='ui'?'btn primary':'btn';
+  const el=document.getElementById('rules-content');
+  if(tab==='rules'){
+    el.innerHTML=`
+      <p><strong>Deck:</strong> Two standard 52-card decks + 2 Jokers = 106 cards. Deuces (2s) and Jokers are wild. Queens of Spades are special — not wild, but can only be discarded when going out.</p>
+      <p style="margin-top:8px;"><strong>Deal:</strong> Each player gets 13 cards. The first player (left of dealer) gets 14 and may meld — even going out (Dream!) — before discarding one to begin play.</p>
+      <p style="margin-top:8px;"><strong>Each turn:</strong></p>
+      <ol style="margin:4px 0 8px 16px;padding:0;">
+        <li style="margin-bottom:4px;">Draw from the deck <em>or</em> pick up the entire discard pile (you must immediately meld the top card using 2+ naturals from your hand)</li>
+        <li style="margin-bottom:4px;">Optionally redeem a Joker from any meld on the table by providing the card it was declared as</li>
+        <li style="margin-bottom:4px;">Meld cards to the table: sets of 3–4 same rank, or runs of 3+ cards in same suit. Any meld with wilds needs at least 2 natural cards.</li>
+        <li>Discard one card — mandatory, even when going out</li>
+      </ol>
+      <p><strong>Wilds in runs:</strong> Your selection order determines which rank a wild fills. Cards selected left-to-right go low-to-high — wilds to the left extend down, wilds to the right extend up. No wild may occupy the Q♠ position in a spades run.</p>
+      <p style="margin-top:8px;"><strong>Calling cards:</strong> Once you've melded, you must announce your card count ("I have 2") before discarding if you'll have ≤3 cards left, or if a single draw could let you go out. Forgetting blocks you from going out next turn.</p>
+      <p style="margin-top:8px;"><strong>Going out:</strong> Meld everything and discard your last card. You cannot go out by melding your final card — a discard is always required.</p>
+      <p style="margin-top:8px;"><strong>Bonuses (tallied at game end when someone reaches 1000 pts):</strong><br>
+      ✓ <strong>Check</strong> = +100 pts: Perfect Cut, No Wilds, All Below 8, All Above 7, or Dream<br>
+      ⊙ <strong>Bagel</strong> = +250 pts: go out with all 13 cards in one turn (not your first turn)<br>
+      ✨ <strong>Dream</strong> = check: go out with all 13 cards on your very first turn</p>
+      <p style="margin-top:8px;"><strong>Money:</strong> Going out = collect 5¢ from each player. Bagel or Dream = 10¢ each. At game end, highest scorer after bonuses collects 5¢ per 500 pt difference from each other player.</p>`;
+  } else {
+    el.innerHTML=`
+      <p><strong>Setup:</strong> Choose number of players, enter names, select human or CPU for each. CPU types: 🤖 Conservative (plays it safe) or 🎲 Gambler (holds cards hunting for a Bagel). Tap Deal first hand.</p>
+      <p style="margin-top:8px;"><strong>The Cut:</strong> Slide to choose where to cut the deck. Peek at the bottom card of your cut — if it's special (Deuce, Joker, Q♠) you keep it; keep peeking until you find a normal card. That card goes to the bottom of the draw pile — only you know what it is.</p>
+      <p style="margin-top:8px;"><strong>Selecting cards:</strong> Tap a card to select it (highlighted border). Tap again to deselect. Select multiple cards for melding. Select exactly one to discard.</p>
+      <p style="margin-top:8px;"><strong>Reordering your hand:</strong> Hold and drag a card to move it. This matters for wilds in runs — selection order from left to right determines which rank a wild fills.</p>
+      <p style="margin-top:8px;"><strong>Melding:</strong> Select 3+ cards → tap Meld selected. For runs with a Joker, declare what card the Joker represents (the game auto-detects when unambiguous). You can also tap Add to meld to extend an existing meld.</p>
+      <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the discard pile top card. Select 2+ natural cards to meld with it, then confirm.</p>
+      <p style="margin-top:8px;"><strong>Redeeming a Joker:</strong> After drawing, tap Redeem joker. Select the joker to redeem — you need the natural card it was declared as in your hand.</p>
+      <p style="margin-top:8px;"><strong>Calling cards:</strong> When required, the Call button appears before discarding. Tap it and confirm your card count.</p>
+      <p style="margin-top:8px;"><strong>Discard history:</strong> The small faded cards beside the top of the discard pile show recent discards — up to one full round back.</p>
+      <p style="margin-top:8px;"><strong>Passing the device (all-human):</strong> After each turn, a handoff screen shows the table state. Tap "I'm [Name] — show my hand" to reveal your cards.</p>
+      <p style="margin-top:8px;"><strong>Scores:</strong> Tap Scores at any time to see the full scorecard. Bagel scores are circled ⊙, checks appear as ✓ ticks.</p>
+      <p style="margin-top:8px;color:#666;font-size:12px;"><strong>Tip:</strong> The small colored dot in the corner of each card (red or blue) shows which physical deck it came from — useful for verifying no cards were lost or duplicated.</p>`;
+  }
+}
+
+function showAuditDeck(){
+  const result=auditDeck();
+  let msg=`Cards accounted: ${result.total}/106\nDeck 0: ${result.deck0}/53\nDeck 1: ${result.deck1}/53\n`;
+  if(result.dups.length) msg+=`\n⚠ DUPLICATES:\n${result.dups.map(([id,locs])=>`  id${id}: ${locs.join(', ')}`).join('\n')}`;
+  else msg+='\n✓ No duplicates';
+  if(result.missing.length) msg+=`\n\n⚠ MISSING: ids ${result.missing.join(', ')}`;
+  else msg+='\n✓ No missing cards';
+  alert(msg);
+}
+
 function undoLastHand(){
   if(!G.log.length){alert('No hands to undo.');return;}
   const last=G.log.pop();
@@ -2288,6 +2465,7 @@ function showScores(){
     <div class="flex gap-8 wrap">
       <button class="btn small" onclick="restartHand()">↺ Restart hand</button>
       <button class="btn small" onclick="undoLastHand()" ${!G.log||!G.log.length?'disabled':''}>↩ Undo last hand</button>
+      <button class="btn small" onclick="showAuditDeck()">🔍 Audit deck</button>
     </div>
   </div>`;
 
