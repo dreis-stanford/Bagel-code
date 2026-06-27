@@ -261,7 +261,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
 <!-- MELD MODAL -->
 <div id="m-meld" class="modal-overlay" style="display:none;">
   <div class="modal">
-    <div class="flex between center mb-1"><h2>Create meld</h2><button class="btn small" onclick="cm('m-meld')">Cancel</button></div>
+    <div class="flex between center mb-1"><h2>Create meld</h2><button class="btn small" onclick="cancelMeld()">Cancel</button></div>
     <div id="meld-cards" class="flex gap-8 wrap mb-1"></div>
     <div id="meld-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
     <div id="jdecl-area" style="display:none;background:#f0f0ec;border-radius:8px;padding:10px;margin-bottom:0.75rem;">
@@ -481,22 +481,52 @@ function setPC(n){
   renderPlayerInputs(n);
 }
 
+const CPU_NAMES={
+  conservative:['Plain','Pumpernickel','Egg','Cinnamon-Raisin'],
+  gambler:['Poppy','Everything','Garlic','Onion']
+};
+// Track which names have been used this setup
+let _usedCPUNames={conservative:[],gambler:[]};
+
+function pickCPUName(type){
+  const pool=CPU_NAMES[type]||['CPU'];
+  const used=_usedCPUNames[type]||[];
+  const available=pool.filter(n=>!used.includes(n));
+  // If all used, reset and start again
+  if(!available.length){_usedCPUNames[type]=[];return pool[0];}
+  const name=available[Math.floor(Math.random()*available.length)];
+  (_usedCPUNames[type]=_usedCPUNames[type]||[]).push(name);
+  return name;
+}
+
 function renderPlayerInputs(n){
+  _usedCPUNames={conservative:[],gambler:[]};
   document.getElementById('pname-inputs').innerHTML=Array.from({length:n},(_,i)=>`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
       <input type="text" id="pn${i}" value="Player ${i+1}" style="flex:1;margin-bottom:0;">
-      <select id="pt${i}" onchange="onTypeChange()" style="width:150px;margin-bottom:0;">
+      <select id="pt${i}" onchange="onTypeChange(${i})" style="width:150px;margin-bottom:0;">
         <option value="human">👤 Human</option>
         <option value="conservative">🤖 Conservative</option>
         <option value="gambler">🎲 Gambler</option>
       </select>
     </div>`).join('');
-  // Default: player 1 human, rest human
   document.getElementById('setup-mode-hint').textContent='';
 }
 
-function onTypeChange(){
+function onTypeChange(idx){
   const n=G.playerCount||4;
+  // Auto-name the player if they switched to a CPU type and still have default name
+  if(idx!==undefined){
+    const type=document.getElementById(`pt${idx}`)?.value;
+    const nameEl=document.getElementById(`pn${idx}`);
+    const currentName=nameEl?.value||'';
+    const isDefaultName=/^Player \d+$/.test(currentName)||Object.values(CPU_NAMES).flat().includes(currentName);
+    if(type&&type!=='human'&&isDefaultName&&nameEl){
+      nameEl.value=pickCPUName(type);
+    } else if(type==='human'&&isDefaultName&&nameEl){
+      nameEl.value=`Player ${idx+1}`;
+    }
+  }
   const types=Array.from({length:n},(_,i)=>document.getElementById(`pt${i}`)?.value||'human');
   const humanCount=types.filter(t=>t==='human').length;
   const cpuCount=n-humanCount;
@@ -1117,7 +1147,7 @@ function updateDeclUI(){
   if(!canCall){
     document.getElementById('btn-decl').style.display='none';
     document.getElementById('btn-undecl').style.display='none';
-    if(cp.hasEverMelded&&cp.hand.length<=4&&G.phase==='play')
+    if(shouldCall({...cp,declared:false})&&G.phase==='play')
       document.getElementById('decl-st').textContent='⚠ Must call before discarding!';
     else
       document.getElementById('decl-st').textContent='';
@@ -1126,7 +1156,7 @@ function updateDeclUI(){
   document.getElementById('btn-decl').style.display=cp.declared?'none':'inline-flex';
   document.getElementById('btn-undecl').style.display=cp.declared?'inline-flex':'none';
   if(cp.declared) document.getElementById('decl-st').textContent=`Called: ${cp.declaredCount} cards`;
-  else if(cp.hand.length<=4) document.getElementById('decl-st').textContent='⚠ Must call before discarding!';
+  else if(shouldCall({...cp,declared:false})) document.getElementById('decl-st').textContent='⚠ Must call before discarding!';
   else document.getElementById('decl-st').textContent='';
 }
 
@@ -1342,16 +1372,27 @@ function openMeld(){
       document.getElementById('meld-err').style.color='#2e7d32';
       document.getElementById('meld-err').textContent=`Joker auto-declared as: ${jkrs.map(j=>autoDecls[j.id]).join(', ')}`;
     }
-    jkrs.forEach(j=>{if(autoDecls[j.id])j.declaredAs=autoDecls[j.id];});
+    jkrs.forEach(j=>{if(autoDecls[j.id])j._pendingDecl=autoDecls[j.id];});
   } else document.getElementById('jdecl-area').style.display='none';
   document.getElementById('m-meld').style.display='flex';
+}
+
+function cancelMeld(){
+  // Clear any pending declarations set during openMeld preview
+  const cp=G.players[G.currentIdx];
+  cp.hand.forEach(c=>{if(c._pendingDecl)delete c._pendingDecl;});
+  cm('m-meld');
 }
 
 function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   document.getElementById('meld-err').style.color='#c0392b';
-  sel.filter(c=>c.joker).forEach(j=>{const i=document.getElementById(`jd${j.id}`);if(i)j.declaredAs=normDecl(i.value.trim())||j.declaredAs||null;});
+  sel.filter(c=>c.joker).forEach(j=>{
+    const i=document.getElementById(`jd${j.id}`);
+    j.declaredAs=normDecl(i?.value.trim()||j._pendingDecl||'')||j.declaredAs||null;
+    delete j._pendingDecl;
+  });
 
   if(G.mustMeldTopId!==null){
     if(!sel.some(c=>c.id===G.mustMeldTopId)){document.getElementById('meld-err').textContent='Must include the top discard pile card!';return;}
@@ -1558,8 +1599,8 @@ function doDiscard(){
   }
   if(!G.drewCard){setWarn('Draw a card first.');return;}
   if(G.mustMeldTopId!==null){setWarn('First meld the top discard card with your naturals.');return;}
-  // Check if player should have called but didn't — flag for next turn
-  if(!goOut&&cp.hasEverMelded&&(cp.hand.length-1)<=3&&!cp.declared){
+  // Check if player should have called but didn't — only flag if NOT going out
+  if(!goOut&&shouldCall(cp)){
     cp.missedDeclaration=true;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
@@ -1569,11 +1610,11 @@ function doDiscard(){
     autoDecl();endTurnHO();return;
   }
   if(goOut&&cp.missedDeclaration){
-    setWarn('You cannot go out — you failed to call on a previous turn when required.');
+    setWarn('⚠ You must call cards before going out. You had ≤3 cards at end of a previous turn and did not call. Your discard stands but you cannot go out this turn.');
     cp.missedDeclaration=false;
     autoDecl();endTurnHO();return;
   }
-  if(goOut){endHand(G.currentIdx);return;}
+  if(goOut){cp.missedDeclaration=false;endHand(G.currentIdx);return;}
   autoDecl();endTurnHO();
 }
 
@@ -1581,6 +1622,19 @@ function autoDecl(){
   const cp=G.players[G.currentIdx];
   if(!cp.hasEverMelded)return;
   if(cp.declared&&cp.hand.length>(cp.declaredCount||99)){cp.declared=false;cp.declaredCount=null;}
+}
+
+// Returns true if player is required to call before discarding
+function shouldCall(cp){
+  if(!cp.hasEverMelded) return false; // bagel/dream exception
+  if(cp.declared) return false; // already called
+  // Condition 1: ≤3 cards after discarding
+  if(cp.hand.length-1<=3) return true;
+  // Condition 2: a single drawn card could complete the hand
+  // i.e. current hand (minus one discard) can all be melded
+  // Use canBagel which checks if hand can meld to exactly 1 leftover
+  if(cp.hand.length>=4 && canBagel(cp.hand)) return true;
+  return false;
 }
 
 function openDeclare(){
@@ -1835,7 +1889,7 @@ function combinations(arr,k){
 
 function cpuDiscard(cp){
   // Declare if needed
-  if(cp.hasEverMelded&&(cp.hand.length-1)<=3&&!cp.declared){
+  if(shouldCall(cp)){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
   }
   // Pick highest penalty card to discard (most negative if stuck in hand)
@@ -1994,7 +2048,7 @@ function cpuDoDiscard(cp,card,goOut){
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
   if(goOut){endHand(G.currentIdx);return;}
-  if(cp.hasEverMelded&&cp.hand.length<=3&&!cp.declared)cp.missedDeclaration=true;
+  if(shouldCall(cp))cp.missedDeclaration=true;
   updateGame();cpuAfterDiscard();
 }
 
