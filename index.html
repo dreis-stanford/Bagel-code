@@ -1764,6 +1764,16 @@ function autoDecl(){
   const cp=G.players[G.currentIdx];
   if(!cp.hasEverMelded)return;
   if(cp.declared&&cp.hand.length>(cp.declaredCount||99)){cp.declared=false;cp.declaredCount=null;}
+  if(cp.declared&&cp.type&&cp.type!=="human"&&cp.hand.length<(cp.declaredCount||99)){
+    const newCount=cp.hand.length-1;
+    if(newCount>=1){
+      cp.declaredCount=newCount;
+      if(!G.jokerNotifications) G.jokerNotifications=[];
+      const callMsg=`📣 ${cp.name} updated call to ${newCount} card${newCount!==1?"s":""}`;
+      G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
+      showJokerNotifyModal(callMsg);
+    }
+  }
 }
 
 // Returns true if player is required to call before discarding
