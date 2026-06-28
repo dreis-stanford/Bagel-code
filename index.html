@@ -1961,7 +1961,15 @@ function cpuDraw(cp){
         if(meldFromTable.length>0){
           // Extend existing meld rather than create duplicate
           const meldIdx=cp.melds.findIndex(m=>m.cards.some(c=>meldFromTable.some(t=>t.id===c.id)));
-          if(meldIdx>=0){cp.melds[meldIdx].cards=[...cp.melds[meldIdx].cards,...meldFromHand];sortMeld(cp.melds[meldIdx]);}
+          if(meldIdx>=0){
+            const merged=[...cp.melds[meldIdx].cards,...meldFromHand];
+            const vm=valMeld(merged);
+            if(vm.valid&&vm.type===cp.melds[meldIdx].type){
+              cp.melds[meldIdx].cards=merged;sortMeld(cp.melds[meldIdx]);
+            } else {
+              const nm={cards:meldFromHand,type:v.type};sortMeld(nm);cp.melds.push(nm);
+            }
+          }
           else{const nm={cards:meldFromHand,type:v.type};sortMeld(nm);cp.melds.push(nm);}
         } else {
           const nm={cards:bestMeld,type:v.type};sortMeld(nm);cp.melds.push(nm);
