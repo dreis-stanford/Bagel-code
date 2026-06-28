@@ -7,6 +7,8 @@ A family card game called "Bagel" built as a single HTML/JS/CSS file, targeting 
 - GitHub: https://github.com/dreis-stanford/Bagel-code (public)
 - Live: https://dreis-stanford.github.io/Bagel-code
 - Files: `index.html` (game), `RULES.md` (rules), `CONTEXT.md` (this file)
+- Branch `main`: stable old UI with all bug fixes
+- Branch `new-ui`: new all-players layout (in progress, has bugs)
 
 ## Game overview
 - 106-card deck (2× standard 52 + 2 jokers, each card has `deck:0` or `deck:1` property)
@@ -39,6 +41,8 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Gambler CPU: holds for bagel, bails if someone calls or >4 turns without bagel possible
 - canBagel/canMeldAll: recursive with 2000-iter limit, works on copies to avoid mutation
 - canBagelCached(cp): cached by playerId+turnCount+handLength
+- shouldCall(cp): ≤3 cards after discard OR canBagelCached non-null
+- normDecl(s): normalizes suit input (3C→3♣, 10s→10♠)
 - CPU names auto-assigned: Conservative=Plain/Pumpernickel/Egg/Cinnamon-Raisin; Gambler=Poppy/Everything/Garlic/Onion
 - Three modes: all-human (pass & play), one human+CPU (continuous), all CPU (watch)
 - Show CPU cards checkbox (default OFF — shows melds/discards, hides hand values)
@@ -47,17 +51,13 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Async CPU turns: one meld at a time with pauses; Continue ▶ after each CPU discard (single-human mode)
 - Deck integrity: deck:0/deck:1 property on every card; auditDeck() accessible via Scores→Debug
 - Discard history: last N-1 cards beside top card; recent discards on handoff screen
-- Calling card loud modal notification to all players
+- Calling card loud modal notification to all players (human and CPU)
 - Two-column layout: game main + sidebar (table pts public, hand penalty private)
 - Tap to select, hold & drag to reorder hand (8px threshold)
 - sortMeld sorts runs by declaredAs rank for wilds
 - Rules modal: two tabs — Game Rules and Playing on Screen
 - Feedback button: type selector + description + auto-captured game state; copy to clipboard or email
-- Audit Deck button in Scores→Debug: shows popup with card counts and duplicates (no console needed)
-
-## Critical bugs fixed this session
-- **optShowCPU always true**: `checked!==false` evaluates incorrectly when element missing; fixed to `checked||false`
-- **Hang on startup with CPU first player in hidden mode**: `showHandoff` called `runCPUInstant` before switching to game screen; DOM elements didn't exist yet. Fixed by calling `showSc('game');updateGame()` before `runCPUInstant` in hidden mode path.
+- Audit Deck button in Scores→Debug: shows popup with card counts and duplicates
 
 ## Architecture
 - `G` object = full game state
@@ -82,42 +82,52 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Handoff screen only in all-human mode; single-human+CPU goes direct to game screen
 - Hidden CPU mode: game screen shown BEFORE runCPUInstant is called
 
-## Recent fixes (this session)
-- Invalid run+set CPU melds fixed: cpuMeldAsync and cpuMeld sync add-to-existing now check v2.type===em.type
-- confirmAdd also enforces meld type preservation and handles redeemMustMeld
-- CPU stuck with empty hand fixed: goOut now triggers on hand.length<=1 (not just ===1)
-- Null card guard added to cpuDoDiscard
-- CPU hand cards now hidden in main area when Show CPU cards OFF (renderHand shows card backs)
-- CPU card backs shown: red (deck 0) or blue (deck 1) gradient
-- CPU card count hidden in sidebar when Show CPU cards OFF
-- CPU hand penalty hidden in "This hand" sidebar when Show CPU cards OFF
-- "You" label in melds now means human player, not current turn player
-- CPU joker declaration now sends notification to human player (cpuMeldAsync + cpuMeld)
-- Joker redemption now requires immediate meld (G.redeemMustMeld flag blocks discard)
-- Calling modal title fixed (was showing "Joker declaration")
-- Calling card count defaults to hand.length-1 (after discard)
-- Calling notification modal more prominent (larger, orange border)
-- Continue ▶ button upgraded to primary button (larger, more visible)
-- rcBack(deck, sm) function added for face-down card rendering
+## Bug fixes in main (stable)
+- Pile pickup meld extension now validates before merging (was illegally adding mismatched cards to existing melds)
+- cpuDiscard calls endHand instead of silently returning when hand is empty
+- doUndeclare resets calledThisTurn (fixes edge case in undeclare/redeclare flow)
+- autoDecl updates CPU call count downward when CPU melds further after calling
+- CPU calling cards now shows loud modal notification (same as human confirmDecl)
+- first-discard phase preserved correctly across all players in opening round (endTurnHO fix)
+- doDiscard no longer sets phase='draw' prematurely in first-discard path
 
-## Rules to confirm
-1. **Joker redemption — must meld immediately?** Currently enforced: after redeeming a joker you must meld it before discarding. But this may not be a universal rule — some may allow holding the redeemed joker in hand. Consider making this a setup option (like Perfect Cut) if family members disagree. Implementation: G.optRedeemMustMeld toggle on setup screen.
+## New UI branch (new-ui) — in progress
+Design goal: all players' hands visible at once on the left panel, face-up or face-down per context, grouped with each player's melds. Draw/discard piles and scores moved to right sidebar. Active player zone highlighted/enlarged with action buttons inline.
+
+### New UI key changes
+- `renderAllPlayers()` replaces `renderOthers()`, `renderAllMelds()`, `renderHand()` — renders all player zones
+- `G.awaitingCPUAck` flag controls Continue ▶ button rendering inside CPU zone
+- `tSel()` updates card CSS classes in-place (no full re-render) to prevent button/touch interference
+- `htouchStart` ignores touches on button elements
+- Action buttons only render for active human player zone (not CPU zones)
+- Piles moved to sidebar panel
+
+### New UI known bugs (as of end of session)
+1. **All-human mode**: second player cannot draw or see discard pile after first player discards
+2. **Human+CPU**: flow still getting stuck in first-discard round in some cases
+3. **Discard pile**: intermittently not showing (renderPiles was accidentally deleted once — now restored)
+4. **Browser caching**: GitHub Pages propagation delay can cause old version to appear after push — wait ~2 min and hard refresh
 
 ## Known issues / next session
-1. **Deck duplication** — believed fixed (cpuDraw table natural handling); verify with auditDeck() during testing
-2. **Gambler hang** — mitigated with iter limit + caching; monitor tester reports
-3. **Self-scoring** — not yet built
-4. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
-5. **Xcode/SwiftUI transition** — planned after prototype is stable
-6. **Joker redemption meld not recognized** — after redemption mustMeldTopId points to joker id; user reported meld not accepted with valid naturals. Needs further investigation. The redeemMustMeld flag may conflict with normal meld validation in some cases.
-7. **Joker redemption — add to existing meld** — currently must meld with 2 naturals from hand; should also allow adding redeemed joker to an existing meld (similar to pile pickup using table naturals). Rule is documented correctly; enforcement partially done.
-8. **Call/Discard combined button** — currently Call and Discard are separate steps. Consider a single "Call & Discard" button that handles both actions at once. The call count could be shown inline (e.g. "Discard (calling 2)") to reduce the number of taps. Current two-step flow works but is awkward.
-7. **CPU hand count visible when Show CPU cards is OFF** — the sidebar currently shows card counts for CPU players even when their cards should be hidden. In hidden mode, CPU card counts should not be displayed (only show that it's their turn and what they discarded/melded). Fix: in renderOthers, when !G.optShowCPU, hide the 🃏 count for CPU players.
+1. **New UI bugs** — see above; fix all-human and human+CPU first-discard flow
+2. **Self-scoring** — not yet built
+3. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
+4. **Xcode/SwiftUI transition** — planned after prototype is stable
+5. **Joker redemption meld not recognized** — redeemMustMeld flag may conflict with normal meld validation
+6. **Joker redemption — add to existing meld** — should allow adding redeemed joker to existing meld
+7. **Call/Discard combined button** — consider single "Discard (calling 2)" button to reduce taps
+8. **CPU hand count visible when Show CPU cards OFF** — fix in renderOthers
 
 ## Session workflow
-- Upload index.html + CONTEXT.md + RULES.md at session start
-- Edit /mnt/user-data/outputs/bagel_v3.html
-- Syntax check: node --check on extracted script
-- Download and push to GitHub as index.html
+- Upload index.html + CONTEXT.md at session start
+- For new-ui work: also upload the new-ui branch index.html
+- Syntax check: node -e with new Function()
+- Download and push to GitHub as index.html (to appropriate branch)
 - Test at https://dreis-stanford.github.io/Bagel-code (NOT in Claude artifact viewer)
 - Feedback via in-game Feedback button → copy to clipboard
+
+## Branch strategy
+- `main`: stable old UI, safe for beta testers
+- `new-ui`: new all-players layout, work in progress
+- GitHub web interface used for all pushes (iPad workflow)
+- No local Git — revert via GitHub commit history if needed
