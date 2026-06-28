@@ -83,6 +83,10 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Hidden CPU mode: game screen shown BEFORE runCPUInstant is called
 
 ## Recent fixes (this session)
+- Invalid run+set CPU melds fixed: cpuMeldAsync and cpuMeld sync add-to-existing now check v2.type===em.type
+- confirmAdd also enforces meld type preservation and handles redeemMustMeld
+- CPU stuck with empty hand fixed: goOut now triggers on hand.length<=1 (not just ===1)
+- Null card guard added to cpuDoDiscard
 - CPU hand cards now hidden in main area when Show CPU cards OFF (renderHand shows card backs)
 - CPU card backs shown: red (deck 0) or blue (deck 1) gradient
 - CPU card count hidden in sidebar when Show CPU cards OFF
@@ -96,14 +100,18 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Continue ▶ button upgraded to primary button (larger, more visible)
 - rcBack(deck, sm) function added for face-down card rendering
 
+## Rules to confirm
+1. **Joker redemption — must meld immediately?** Currently enforced: after redeeming a joker you must meld it before discarding. But this may not be a universal rule — some may allow holding the redeemed joker in hand. Consider making this a setup option (like Perfect Cut) if family members disagree. Implementation: G.optRedeemMustMeld toggle on setup screen.
+
 ## Known issues / next session
 1. **Deck duplication** — believed fixed (cpuDraw table natural handling); verify with auditDeck() during testing
 2. **Gambler hang** — mitigated with iter limit + caching; monitor tester reports
 3. **Self-scoring** — not yet built
 4. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
 5. **Xcode/SwiftUI transition** — planned after prototype is stable
-6. **Joker redemption — add to existing meld** — currently must meld with 2 naturals from hand; should also allow adding redeemed joker to an existing meld (similar to pile pickup using table naturals). Rule is documented correctly; enforcement partially done.
-7. **Call/Discard combined button** — currently Call and Discard are separate steps. Consider a single "Call & Discard" button that handles both actions at once. The call count could be shown inline (e.g. "Discard (calling 2)") to reduce the number of taps. Current two-step flow works but is awkward.
+6. **Joker redemption meld not recognized** — after redemption mustMeldTopId points to joker id; user reported meld not accepted with valid naturals. Needs further investigation. The redeemMustMeld flag may conflict with normal meld validation in some cases.
+7. **Joker redemption — add to existing meld** — currently must meld with 2 naturals from hand; should also allow adding redeemed joker to an existing meld (similar to pile pickup using table naturals). Rule is documented correctly; enforcement partially done.
+8. **Call/Discard combined button** — currently Call and Discard are separate steps. Consider a single "Call & Discard" button that handles both actions at once. The call count could be shown inline (e.g. "Discard (calling 2)") to reduce the number of taps. Current two-step flow works but is awkward.
 7. **CPU hand count visible when Show CPU cards is OFF** — the sidebar currently shows card counts for CPU players even when their cards should be hidden. In hidden mode, CPU card counts should not be displayed (only show that it's their turn and what they discarded/melded). Fix: in renderOthers, when !G.optShowCPU, hide the 🃏 count for CPU players.
 
 ## Session workflow

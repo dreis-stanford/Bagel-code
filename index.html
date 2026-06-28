@@ -1525,8 +1525,11 @@ function confirmMeld(){
         :'Must include the top discard pile card!';
       return;
     }
-    const preselInMeld=sel.filter(c=>G.mustNaturalIds?.has(c.id));
-    if(preselInMeld.length<2){document.getElementById('meld-err').textContent='Must include the 2+ naturals you selected during pickup.';return;}
+    // Pre-selected naturals check only applies to pile pickup, not joker redemption
+    if(!G.redeemMustMeld&&G.mustNaturalIds){
+      const preselInMeld=sel.filter(c=>G.mustNaturalIds.has(c.id));
+      if(preselInMeld.length<2){document.getElementById('meld-err').textContent='Must include the 2+ naturals you selected during pickup.';return;}
+    }
   }
 
   const v=valMeld(sel);
@@ -1653,9 +1656,18 @@ function openAdd(){
 function confirmAdd(mi){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
-  const combo=[...cp.melds[mi].cards,...sel];
-  const v=valMeld(combo);if(!v.valid){document.getElementById('add-err').textContent=v.msg;return;}
-  cp.melds[mi].cards=combo;sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+  const em=cp.melds[mi];
+  const combo=[...em.cards,...sel];
+  const v=valMeld(combo);
+  if(!v.valid){document.getElementById('add-err').textContent=v.msg;return;}
+  if(v.type!==em.type){document.getElementById('add-err').textContent='Cannot change meld type when adding cards.';return;}
+  if(G.redeemMustMeld&&!sel.some(c=>c.id===G.mustMeldTopId)){
+    document.getElementById('add-err').textContent='Must include the redeemed Joker!';return;
+  }
+  em.cards=combo;sortMeld(em);
+  sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+  if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+  if(G.redeemMustMeld&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.redeemMustMeld=false;}
   G.sel=[];cm('m-add');autoDecl();updateGame();
 }
 
@@ -1872,7 +1884,7 @@ function cpuMeldAsync(cp,speed,onDone){
     for(const card of cp.hand){
       const combined=[...em.cards,card];
       const v2=valMeld(combined);
-      if(v2.valid){
+      if(v2.valid&&v2.type===em.type){  // must preserve meld type
         em.cards=combined;sortMeld(em);
         cp.hand=cp.hand.filter(h=>h.id!==card.id);
         if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -1998,7 +2010,7 @@ function cpuMeld(cp){
       for(const card of cp.hand){
         const combined=[...existingMeld.cards,card];
         const v2=valMeld(combined);
-        if(v2.valid){
+        if(v2.valid&&v2.type===existingMeld.type){
           existingMeld.cards=combined;
           cp.hand=cp.hand.filter(h=>h.id!==card.id);
           if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -2048,7 +2060,7 @@ function cpuDiscard(cp){
   const toDiscard=sorted[0];
   if(!toDiscard) return;
 
-  const goOut=cp.hand.length===1;
+  const goOut=cp.hand.length<=1;
   if(isSp(toDiscard)&&!goOut){
     // Can't discard special — find first non-special
     const nonSpecial=sorted.find(c=>!isSp(c));
@@ -2186,6 +2198,11 @@ function gamblerDiscard(cp){
 // ─────────────────────────────────────────────────────────────────
 
 function cpuDoDiscard(cp,card,goOut){
+  if(!card){
+    // No card to discard — shouldn't happen, but handle gracefully
+    console.warn('cpuDoDiscard called with no card');
+    endTurnHO();return;
+  }
   if(!goOut&&cp.missedDeclaration){
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
     cp.missedDeclaration=false;updateGame();cpuAfterDiscard();return;
