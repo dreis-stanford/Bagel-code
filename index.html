@@ -1810,7 +1810,7 @@ function confirmDecl(){
   cm('m-decl');updateDeclUI();
   showJokerNotifyModal(callMsg);
 }
-function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
+function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;cp.calledThisTurn=false;updateDeclUI();}
 
 // ── CPU TURN ENGINE ──────────────────────────────────────────────
 function runCPUInstant(){
@@ -2056,6 +2056,11 @@ function cpuDiscard(cp){
   // Declare if needed
   if(shouldCall(cp)){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
+    cp.calledThisTurn=true;cp.missedDeclaration=false;
+    if(!G.jokerNotifications) G.jokerNotifications=[];
+    const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
+    G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
+    showJokerNotifyModal(callMsg);
   }
   // Pick highest penalty card to discard (most negative if stuck in hand)
   // Prefer to keep naturals useful for melds; discard wilds last (high penalty but useful)
@@ -2066,7 +2071,7 @@ function cpuDiscard(cp){
     return Math.abs(cPts(b,true))-Math.abs(cPts(a,true)); // highest penalty first
   });
   const toDiscard=sorted[0];
-  if(!toDiscard) return;
+  if(!toDiscard){endHand(G.currentIdx);return;}
 
   const goOut=cp.hand.length<=1;
   if(isSp(toDiscard)&&!goOut){
