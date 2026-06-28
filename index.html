@@ -14,6 +14,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #
 .game-layout { display: grid; grid-template-columns: 1fr 200px; gap: 1rem; align-items: flex-start; }
 .game-main { min-width: 0; }
 .game-sidebar { min-width: 0; }
+/* Player zones */
+.player-zone { background: #fff; border-radius: 12px; border: 1px solid rgba(0,0,0,0.12); padding: 8px 10px; margin-bottom: 8px; transition: box-shadow 0.2s; }
+.player-zone.active-zone { border-color: #2E4057; border-width: 2px; box-shadow: 0 4px 16px rgba(46,64,87,0.18); background: #f7f9fb; }
+.player-zone .zone-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.player-zone .zone-name { font-size: 13px; font-weight: 600; color: #555; }
+.player-zone.active-zone .zone-name { color: #2E4057; font-size: 14px; }
+.player-zone .zone-meta { font-size: 11px; color: #888; }
+.zone-melds { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; min-height: 0; }
+.zone-hand { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px; background: #f0f0ec; border-radius: 8px; min-height: 52px; border: 0.5px solid rgba(0,0,0,0.1); }
+.active-zone .zone-hand { gap: 6px; padding: 10px; min-height: 88px; background: #eef1f5; }
+.zone-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+.zone-call-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+/* Sidebar piles */
+.pile-sidebar { display: flex; gap: 16px; align-items: flex-start; justify-content: center; margin-bottom: 8px; }
 .sidebar-panel { background: #fff; border-radius: 12px; border: 0.5px solid rgba(0,0,0,0.15); padding: 0.75rem; margin-bottom: 0.75rem; font-size: 12px; }
 .sidebar-panel h4 { font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 .sidebar-player { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 0.5px solid rgba(0,0,0,0.08); }
@@ -172,48 +186,31 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     </div>
   </div>
   <div class="game-layout">
-    <!-- MAIN AREA -->
+    <!-- MAIN AREA: all player zones -->
     <div class="game-main">
-      <div class="pile-area">
-        <div class="pile-slot">
-          <span>Draw pile</span>
-          <div class="card-el back" id="draw-pile-btn" onclick="drawCard()" style="width:46px;height:68px;display:flex;align-items:center;justify-content:center;">
-            <div style="color:rgba(255,255,255,0.5);font-size:10px;text-align:center;">tap<br>draw</div>
-          </div>
-          <span id="draw-ct"></span>
-        </div>
-        <div class="pile-slot">
-          <span>Discard pile</span>
-          <div style="display:flex;align-items:flex-end;gap:3px;">
-            <div id="disc-history" style="display:flex;align-items:flex-end;gap:2px;"></div>
-            <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:52px;min-height:76px;"></div>
-          </div>
-          <span id="disc-ct"></span>
-        </div>
-      </div>
-      <div id="all-melds" style="margin-bottom:0.75rem;"></div>
-      <div class="flex gap-8 wrap mb-half">
-        <button class="btn primary" id="btn-meld" onclick="openMeld()" disabled>Meld selected</button>
-        <button class="btn" id="btn-add" onclick="openAdd()" disabled>Add to meld</button>
-        <button class="btn" id="btn-redeem" onclick="openRedeem()" disabled>Redeem joker</button>
-        <button class="btn" id="btn-label-joker" onclick="labelSelectedJoker()" style="display:none;">Label joker</button>
-        <button class="btn danger" id="btn-disc" onclick="doDiscard()" disabled>Discard</button>
-      </div>
-      <div class="flex between center mb-half">
-        <h3 id="hand-lbl"></h3>
-        <div class="flex gap-8 center">
-          <span id="decl-st" style="font-size:12px;color:#666;"></span>
-          <button class="btn small" id="btn-decl" onclick="openDeclare()" style="display:none;">Call</button>
-          <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Uncall</button>
-        </div>
-      </div>
-      <div class="hand-area" id="cur-hand"></div>
+      <div id="all-players-area"></div>
     </div>
     <!-- SIDEBAR -->
     <div class="game-sidebar">
+      <!-- Piles moved here -->
       <div class="sidebar-panel">
-        <h4>Players</h4>
-        <div id="sidebar-players"></div>
+        <div class="pile-sidebar">
+          <div class="pile-slot">
+            <span>Draw</span>
+            <div class="card-el back" id="draw-pile-btn" onclick="drawCard()" style="width:46px;height:68px;display:flex;align-items:center;justify-content:center;">
+              <div style="color:rgba(255,255,255,0.5);font-size:10px;text-align:center;">tap<br>draw</div>
+            </div>
+            <span id="draw-ct"></span>
+          </div>
+          <div class="pile-slot">
+            <span>Discard</span>
+            <div style="display:flex;align-items:flex-end;gap:3px;">
+              <div id="disc-history" style="display:flex;align-items:flex-end;gap:2px;"></div>
+              <div id="disc-top" onclick="startPickup()" style="cursor:pointer;min-width:46px;min-height:68px;"></div>
+            </div>
+            <span id="disc-ct"></span>
+          </div>
+        </div>
       </div>
       <div class="sidebar-panel">
         <h4>This hand</h4>
@@ -226,6 +223,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
       </div>
     </div>
   </div>
+
 </div>
 
 <!-- END HAND -->
@@ -868,165 +866,35 @@ function updateGame(){
   document.getElementById('g-hand').textContent=`Hand ${G.hand+1}`;
   document.getElementById('g-turn').textContent=`${cp.name}'s turn`;
   const isHuman=!cp.type||cp.type==='human';
-  document.getElementById('hand-lbl').textContent=`${isHuman?'Your':cp.name+"'s"} hand (${cp.hand.length} cards)`;
-  renderOthers();renderPiles();renderAllMelds();renderHand();updateBtns();updateDeclUI();
+  renderOthers();renderPiles();updateBtns();updateDeclUI();
 }
 
 function renderOthers(){
-  const cp=G.players[G.currentIdx];
-  document.getElementById('sidebar-players').innerHTML=G.players.map(p=>{
-    const isActive=p.id===G.currentIdx;
-    const isCPU=p.type&&p.type!=='human';
-    const showCount=!isCPU||G.optShowCPU;
-    return`<div class="sidebar-player" style="${isActive?'font-weight:600;':''}">
-      <div style="font-size:12px;">
-        ${isCPU?'🤖':'👤'} ${p.name}${p.id===G.dealerIdx?' ✦':''}
-        ${isActive?'<span style="color:#2E4057;font-size:10px;"> ▶</span>':''}
-        ${p.declared?`<span style="color:#e65100;font-size:10px;"> called(${p.declaredCount})</span>`:''}
-      </div>
-      <div style="font-size:11px;color:#666;text-align:right;">
-        ${showCount?`${p.hand.length}🃏`:'—'}<br>${p.points}pts
-      </div>
-    </div>`;
-  }).join('');
-
+  // Sidebar hand scores panel
   document.getElementById('sidebar-hand-scores').innerHTML=G.players.map(p=>{
     const tablePts=p.melds.reduce((s,m)=>s+mPts(m),0);
     const isCPU=p.type&&p.type!=='human';
-    const isHumanPlayer=!isCPU;
-    const canShowPenalty=isHumanPlayer||G.optShowCPU;
+    const canShowPenalty=!isCPU||G.optShowCPU;
     const handPts=canShowPenalty?p.hand.reduce((s,c)=>s+cPts(c,true),0):null;
     return`<div class="sidebar-player">
-      <div style="font-size:11px;">${p.name}</div>
+      <div style="font-size:11px;">${p.name}${p.id===G.dealerIdx?' ✦':''}</div>
       <div style="font-size:11px;text-align:right;">
         <span style="color:#2e7d32;">+${tablePts}</span>
         ${handPts!==null?`<span style="color:${handPts<0?'#c0392b':'#666'}"> ${handPts}</span>`:`<span style="color:#ccc"> ?</span>`}
       </div>
     </div>`;
   }).join('');
-
-  const cpuHandsEl=document.getElementById('cpu-hands-area');
-  if(!cpuHandsEl) return;
-  const cpuPlayers=G.players.filter(p=>p.type&&p.type!=='human');
-  if(!cpuPlayers.length){cpuHandsEl.innerHTML='';return;}
-  if(!G.optShowCPU){
-    // Show card backs for each CPU player
-    cpuHandsEl.innerHTML=cpuPlayers.map(p=>`
-      <div style="margin-top:8px;">
-        <div style="font-size:11px;color:#666;margin-bottom:4px;">🤖 ${p.name} (${p.hand.length} cards)</div>
-        <div style="display:flex;flex-wrap:wrap;gap:3px;">
-          ${p.hand.map(c=>rcBack(c.deck,true)).join('')}
-        </div>
-      </div>`).join('');
-    return;
-  }
-  cpuHandsEl.innerHTML=cpuPlayers.map(p=>{
-    const sorted=[...p.hand].sort((a,b)=>{
-      if(a.joker!==b.joker)return a.joker?-1:1;
-      if(a.wild!==b.wild)return a.wild?-1:1;
-      if(a.qs!==b.qs)return a.qs?-1:1;
-      const so=['♠','♥','♦','♣'];
-      if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
-      return(RO[b.rank]||0)-(RO[a.rank]||0);
-    });
-    return`<div style="margin-top:8px;">
-      <div style="font-size:11px;color:#666;margin-bottom:4px;">🤖 ${p.name}'s hand (${p.hand.length} cards)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:4px;padding:8px;background:#f8f0ff;border-radius:8px;border:0.5px solid #d8b4fe;">
-        ${sorted.map(c=>rc(c,false,null,false)).join('')||'<span class="muted" style="font-size:12px;">No cards</span>'}
-      </div>
-    </div>`;
-  }).join('');
+  renderAllPlayers();
 }
 
-function renderPiles(){
-  document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
-  const pile=G.discardPile;
-  const top=pile[pile.length-1];
-  document.getElementById('disc-top').innerHTML=top?rc(top):
-    `<div class="card-el" style="opacity:0.25;width:46px;height:68px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
-  document.getElementById('disc-ct').textContent=`${pile.length} card${pile.length!==1?'s':''}`;
-  // Show last N-1 discards as small faded history cards (one per player, no repeats)
-  const histEl=document.getElementById('disc-history');
-  if(!histEl) return;
-  const n=G.players.length;
-  if(pile.length<2){histEl.innerHTML='';return;}
-  // Walk back through pile, take up to N-1 unique-player discards
-  // We don't track who discarded what, so just show last N-1 cards
-  const histCount=Math.min(n-1, pile.length-1);
-  if(histCount<=0){histEl.innerHTML='';return;}
-  const histCards=pile.slice(pile.length-1-histCount, pile.length-1);
-  histEl.innerHTML=histCards.map(c=>{
-    let cls=`card-el ${cCol(c)}`;
-    if(c.joker||c.wild)cls+=' special-wild';
-    if(c.qs)cls+=' special-qs';
-    return`<div class="${cls}" style="width:34px;height:50px;opacity:0.65;cursor:default;flex-shrink:0;">
-      <div style="font-size:11px;font-weight:700;">${c.joker?'★':c.rank}</div>
-      <div style="font-size:10px;">${c.suit}</div>
-    </div>`;
-  }).join('');
-}
+function renderAllMelds(){ renderAllPlayers(); }
 
-function sortMeld(meld){
-  if(meld.type==='run'){
-    const rankOf=c=>{
-      if(c.wild&&c.declaredAs){
-        // Extract rank from declaredAs e.g. "7♠" → "7"
-        const r=c.declaredAs.replace(/[♠♥♦♣]/g,'').trim();
-        return RO[r]||0;
-      }
-      return c.wild?0:(RO[c.rank]||0);
-    };
-    meld.cards.sort((a,b)=>rankOf(a)-rankOf(b));
-  }
-}
-
-function renderAllMelds(){
-  const hasMelds=G.players.some(p=>p.melds.length>0);
-  if(!hasMelds){document.getElementById('all-melds').innerHTML='';return;}
-  document.getElementById('all-melds').innerHTML=
-    G.players.filter(p=>p.melds.length>0).map(p=>{
-      const isHuman=!p.type||p.type==='human';
-      const isMe=isHuman; // "You" = the human player, not whoever's turn it is
-      const label=isMe?'You':p.name;
-      const bg=isMe?'#f0f4f8':'#f8f8f6';
-      const border=isMe?'#b0c4de':'rgba(0,0,0,0.1)';
-      p.melds.forEach(m=>sortMeld(m));
-      return`<div style="margin-bottom:4px;padding:4px 6px;background:${bg};border-radius:8px;border:0.5px solid ${border};">
-        <div style="font-size:10px;font-weight:600;color:#555;margin-bottom:3px;">${label}${p.id===G.dealerIdx?' ✦':''}</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;">
-          ${p.melds.map(m=>`<div style="display:inline-flex;align-items:center;gap:2px;background:#fff;border-radius:6px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.1);">
-            ${m.cards.map(c=>rcSmall(c)).join('')}
-            <span style="font-size:9px;color:#888;margin-left:2px;">${mPts(m)}</span>
-          </div>`).join('')}
-        </div>
-      </div>`;
-    }).join('');
-}
-
-function rcSmall(c){
-  let cls=`card-el ${cCol(c)}`;
-  if(c.joker||c.wild)cls+=' special-wild';
-  if(c.qs)cls+=' special-qs';
-  const declLabel=c.joker&&c.declaredAs?`<div style="font-size:7px;color:#e65100;line-height:1;">${c.declaredAs}</div>`:'';
-  const deckDot2=`<div style="position:absolute;top:1px;right:1px;width:4px;height:4px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;"></div>`;
-  return`<div class="${cls}" style="width:32px;height:46px;border-radius:4px;flex-shrink:0;position:relative;" ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:9px;">${c.suit}</div>${declLabel}${deckDot2}</div>`;
-}
-
-function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;renderHand();}
-
-function renderHand(){
+function renderAllPlayers(){
   const cp=G.players[G.currentIdx];
-  const isCPU=cp.type&&cp.type!=='human';
-  // If CPU and not showing cards, show card backs
-  if(isCPU&&!G.optShowCPU){
-    const backs=cp.hand.map(c=>rcBack(c.deck)).join('');
-    document.getElementById('cur-hand').innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:4px;">${backs}</div>`;
-    document.getElementById('hand-lbl').textContent=`${cp.name}'s hand (${cp.hand.length} cards)`;
-    return;
-  }
-  // Use custom order if set, otherwise auto-sort
+  const allHuman=!G.singleHumanMode&&!G.allCPUMode;
+
+  // Ensure hand order for active player
   if(!cp.handOrder){
-    // First time: auto-sort
     cp.handOrder=[...cp.hand].sort((a,b)=>{
       if(a.joker!==b.joker)return a.joker?-1:1;
       if(a.wild!==b.wild)return a.wild?-1:1;
@@ -1036,43 +904,122 @@ function renderHand(){
       return(RO[b.rank]||0)-(RO[a.rank]||0);
     }).map(c=>c.id);
   }
-  // Always sync: remove IDs no longer in hand, keep order otherwise
   const handIds=new Set(cp.hand.map(c=>c.id));
   cp.handOrder=cp.handOrder.filter(id=>handIds.has(id));
-  // Add any new cards not yet in order (e.g. pile pickup cards) at the end
   cp.hand.forEach(c=>{if(!cp.handOrder.includes(c.id))cp.handOrder.push(c.id);});
-  const ordered=cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
-  let hhtml=`<div style='font-size:11px;color:#aaa;margin-bottom:4px;'>Tap to select · Hold &amp; drag to reorder · <button onclick='resetHandOrder()' style='font-size:11px;color:#aaa;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;'>Reset order</button></div>
-  <div id='hand-cards' style='display:flex;flex-wrap:wrap;gap:6px;width:100%;'>`;
-  ordered.forEach(c=>{
-    const isSel=G.sel.includes(c.id);
-    let cls=`card-el ${cCol(c)}`;
-    if(isSel)cls+=' selected';
-    if(c.joker||c.wild)cls+=' special-wild';
-    if(c.qs)cls+=' special-qs';
-    // All cards support both tap (select) and drag (reorder)
-    hhtml+=`<div class='${cls}' id='hc-${c.id}' data-id='${c.id}'
-      style='width:46px;height:68px;cursor:pointer;touch-action:none;'
-      draggable='true'
-      onmousedown='hMouseDown(event,${c.id})'
-      ondragstart='hdragStart(event,${c.id})'
-      ondragover='hdragOver(event,${c.id})'
-      ondragleave='hdragLeave(event)'
-      ondrop='hdrop(event,${c.id})'
-      ondragend='hdragEnd()'
-      ontouchstart='htouchStart(event,${c.id})'
-      ontouchmove='htouchMove(event)'
-      ontouchend='htouchEnd(event,${c.id})'
-      ${c.declaredAs?`title='${c.declaredAs}'`:''}>
-      <div style='font-size:15px;font-weight:700;'>${c.joker?'★':c.rank}</div>
-      <div style='font-size:14px;'>${c.suit}</div>
-      ${c.joker&&c.declaredAs?`<div style='font-size:8px;color:#e65100;line-height:1;margin-top:1px;'>${c.declaredAs}</div>`:''}
-      <div style='position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;'></div>
+
+  const zonesHtml=G.players.map(p=>{
+    const isActive=p.id===G.currentIdx;
+    const isCPU=p.type&&p.type!=='human';
+    const isHuman=!isCPU;
+    const showCards=isActive||(isCPU&&G.optShowCPU);
+    const hideHand=!isActive&&(allHuman||(!G.optShowCPU&&isCPU));
+
+    // Melds row
+    p.melds.forEach(m=>sortMeld(m));
+    const meldsHtml=p.melds.length>0?`<div class="zone-melds">${
+      p.melds.map(m=>`<div style="display:inline-flex;align-items:center;gap:2px;background:#fff;border-radius:6px;padding:2px 4px;border:0.5px solid rgba(0,0,0,0.12);">
+        ${m.cards.map(c=>rcSmall(c)).join('')}
+        <span style="font-size:9px;color:#888;margin-left:2px;">${mPts(m)}</span>
+      </div>`).join('')}
+    </div>`:'';
+
+    // Hand cards
+    let handHtml='';
+    if(isActive){
+      // Full-size interactive hand
+      const isCPUActive=isCPU;
+      if(isCPUActive&&!G.optShowCPU){
+        handHtml=cp.hand.map(c=>rcBack(c.deck)).join('');
+      } else {
+        const ordered=cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+        handHtml=`<div style="font-size:11px;color:#aaa;margin-bottom:4px;">Tap to select · Hold &amp; drag to reorder · <button onclick="resetHandOrder()" style="font-size:11px;color:#aaa;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">Reset order</button></div>
+        <div id="hand-cards" style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">
+        ${ordered.map(c=>{
+          const isSel=G.sel.includes(c.id);
+          let cls=`card-el ${cCol(c)}`;
+          if(isSel)cls+=' selected';
+          if(c.joker||c.wild)cls+=' special-wild';
+          if(c.qs)cls+=' special-qs';
+          return`<div class="${cls}" id="hc-${c.id}" data-id="${c.id}"
+            style="width:46px;height:68px;cursor:pointer;touch-action:none;"
+            draggable="true"
+            onmousedown="hMouseDown(event,${c.id})"
+            ondragstart="hdragStart(event,${c.id})"
+            ondragover="hdragOver(event,${c.id})"
+            ondragleave="hdragLeave(event)"
+            ondrop="hdrop(event,${c.id})"
+            ondragend="hdragEnd()"
+            ontouchstart="htouchStart(event,${c.id})"
+            ontouchmove="htouchMove(event)"
+            ontouchend="htouchEnd(event,${c.id})"
+            ${c.declaredAs?`title="${c.declaredAs}"`:''}">
+            <div style="font-size:15px;font-weight:700;">${c.joker?'★':c.rank}</div>
+            <div style="font-size:14px;">${c.suit}</div>
+            ${c.joker&&c.declaredAs?`<div style="font-size:8px;color:#e65100;line-height:1;margin-top:1px;">${c.declaredAs}</div>`:''}
+            <div style="position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;"></div>
+          </div>`;
+        }).join('')}
+        </div>`;
+      }
+    } else if(hideHand){
+      // Show card backs
+      const sorted=[...p.hand].sort((a,b)=>{
+        if(a.joker!==b.joker)return a.joker?-1:1;
+        if(a.wild!==b.wild)return a.wild?-1:1;
+        return(RO[b.rank]||0)-(RO[a.rank]||0);
+      });
+      handHtml=sorted.map(c=>rcBack(c.deck,true)).join('');
+    } else {
+      // Show face-up (CPU with show cards ON)
+      const sorted=[...p.hand].sort((a,b)=>{
+        if(a.joker!==b.joker)return a.joker?-1:1;
+        if(a.wild!==b.wild)return a.wild?-1:1;
+        if(a.qs!==b.qs)return a.qs?-1:1;
+        const so=['♠','♥','♦','♣'];
+        if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
+        return(RO[b.rank]||0)-(RO[a.rank]||0);
+      });
+      handHtml=sorted.map(c=>rc(c,false,null,false)).join('');
+    }
+
+    // Action buttons and call row — only for active player
+    const actionsHtml=isActive?`
+      <div class="zone-actions">
+        <button class="btn primary" id="btn-meld" onclick="openMeld()" disabled>Meld selected</button>
+        <button class="btn" id="btn-add" onclick="openAdd()" disabled>Add to meld</button>
+        <button class="btn" id="btn-redeem" onclick="openRedeem()" disabled>Redeem joker</button>
+        <button class="btn" id="btn-label-joker" onclick="labelSelectedJoker()" style="display:none;">Label joker</button>
+        <button class="btn danger" id="btn-disc" onclick="doDiscard()" disabled>Discard</button>
+      </div>
+      <div class="zone-call-row">
+        <span id="decl-st" style="font-size:12px;color:#666;"></span>
+        <button class="btn small" id="btn-decl" onclick="openDeclare()" style="display:none;">Call</button>
+        <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Uncall</button>
+      </div>`:'';
+
+    const nameLabel=isHuman&&!isCPU?'You':p.name;
+    const metaLabel=`${p.hand.length}🃏 · ${p.points}pts${p.declared?` · <span style="color:#e65100;">called ${p.declaredCount}</span>`:''}${p.id===G.dealerIdx?' ✦':''}`;
+
+    return`<div class="player-zone${isActive?' active-zone':''}" id="pzone-${p.id}">
+      <div class="zone-header">
+        <span class="zone-name">${isCPU?'🤖 ':'👤 '}${nameLabel}${isActive?' ▶':''}</span>
+        <span class="zone-meta">${metaLabel}</span>
+      </div>
+      ${meldsHtml}
+      <div class="zone-hand">${handHtml}${!p.hand.length&&!isActive?'<span style="font-size:11px;color:#aaa;">No cards</span>':''}</div>
+      ${actionsHtml}
     </div>`;
-  });
-  hhtml+=`</div>`;
-  document.getElementById('cur-hand').innerHTML=hhtml||`<div class='muted' style='padding:8px;'>No cards in hand</div>`;
+  }).join('');
+
+  const el=document.getElementById('all-players-area');
+  if(el) el.innerHTML=zonesHtml;
+
 }
+
+function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;renderAllPlayers();}
+
+function renderHand(){ renderAllPlayers(); }
 
 function addJokerNotification(playerName, jokers){
   if(!G.jokerNotifications) G.jokerNotifications=[];
@@ -1764,16 +1711,6 @@ function autoDecl(){
   const cp=G.players[G.currentIdx];
   if(!cp.hasEverMelded)return;
   if(cp.declared&&cp.hand.length>(cp.declaredCount||99)){cp.declared=false;cp.declaredCount=null;}
-  if(cp.declared&&cp.type&&cp.type!=="human"&&cp.hand.length<(cp.declaredCount||99)){
-    const newCount=cp.hand.length-1;
-    if(newCount>=1){
-      cp.declaredCount=newCount;
-      if(!G.jokerNotifications) G.jokerNotifications=[];
-      const callMsg=`📣 ${cp.name} updated call to ${newCount} card${newCount!==1?"s":""}`;
-      G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
-      showJokerNotifyModal(callMsg);
-    }
-  }
 }
 
 // Returns true if player is required to call before discarding
@@ -1820,7 +1757,7 @@ function confirmDecl(){
   cm('m-decl');updateDeclUI();
   showJokerNotifyModal(callMsg);
 }
-function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;cp.calledThisTurn=false;updateDeclUI();}
+function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;updateDeclUI();}
 
 // ── CPU TURN ENGINE ──────────────────────────────────────────────
 function runCPUInstant(){
@@ -2066,11 +2003,6 @@ function cpuDiscard(cp){
   // Declare if needed
   if(shouldCall(cp)){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
-    cp.calledThisTurn=true;cp.missedDeclaration=false;
-    if(!G.jokerNotifications) G.jokerNotifications=[];
-    const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
-    G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
-    showJokerNotifyModal(callMsg);
   }
   // Pick highest penalty card to discard (most negative if stuck in hand)
   // Prefer to keep naturals useful for melds; discard wilds last (high penalty but useful)
@@ -2081,7 +2013,7 @@ function cpuDiscard(cp){
     return Math.abs(cPts(b,true))-Math.abs(cPts(a,true)); // highest penalty first
   });
   const toDiscard=sorted[0];
-  if(!toDiscard){endHand(G.currentIdx);return;}
+  if(!toDiscard) return;
 
   const goOut=cp.hand.length<=1;
   if(isSp(toDiscard)&&!goOut){
