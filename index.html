@@ -1684,7 +1684,7 @@ function doDiscard(){
     const goOutFirst=cp.hand.length===1;
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
     if(goOutFirst){endHand(G.currentIdx);return;}
-    G.phase='draw';endTurnHO();return;
+    endTurnHO();return;
   }
   if(!G.drewCard){setWarn('Draw a card first.');return;}
   if(G.mustMeldTopId!==null){setWarn('First meld the top discard card with your naturals.');return;}
@@ -2192,7 +2192,13 @@ function endTurnHO(){
   clearCPUAction();
   G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.redeemMustMeld=false;G.mustMeldTopId=null;
   G.currentIdx=(G.currentIdx+1)%G.players.length;
-  G.phase='draw';clearSt();
+  // Stay in first-discard phase until we cycle back to the hand's first player
+  if(G.phase==='first-discard'&&G.currentIdx!==G.handFirstPlayer){
+    // still in opening round
+  } else {
+    G.phase='draw';
+  }
+  clearSt();
   const next=G.players[G.currentIdx];
   if(next&&next.type!=='human'&&!G.optShowCPU&&(G.singleHumanMode||G.allCPUMode)){
     setTimeout(()=>runCPUInstant(),0);
