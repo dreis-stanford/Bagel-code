@@ -511,7 +511,7 @@ function startDebugDeal(){
     optRM:document.getElementById('opt-rm').checked,
     optShowCPU:document.getElementById('opt-show-cpu')?.checked||false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
-    log:[],snapshot:null,savedDeck:null,cutterIdx:0,cpuTurnId:0,jokerNotifications:[],
+    log:[],snapshot:null,savedDeck:null,cutterIdx:0,cpuTurnId:0,jokerNotifications:[],awaitingCPUAck:false,
     keptByCutter:[],cutterBot:null,topPart:[],botPart:[]
   };
   G.snapshot=snapshotPlayers();
@@ -887,6 +887,31 @@ function renderOthers(){
   renderAllPlayers();
 }
 
+function renderPiles(){
+  document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
+  const pile=G.discardPile;
+  const top=pile[pile.length-1];
+  document.getElementById('disc-top').innerHTML=top?rc(top):
+    `<div class="card-el" style="opacity:0.25;width:46px;height:68px;"><div style="font-size:10px;color:#999;">empty</div></div>`;
+  document.getElementById('disc-ct').textContent=`${pile.length} card${pile.length!==1?'s':''}`;
+  const histEl=document.getElementById('disc-history');
+  if(!histEl) return;
+  const n=G.players.length;
+  if(pile.length<2){histEl.innerHTML='';return;}
+  const histCount=Math.min(n-1, pile.length-1);
+  if(histCount<=0){histEl.innerHTML='';return;}
+  const histCards=pile.slice(pile.length-1-histCount, pile.length-1);
+  histEl.innerHTML=histCards.map(c=>{
+    let cls=`card-el ${cCol(c)}`;
+    if(c.joker||c.wild)cls+=' special-wild';
+    if(c.qs)cls+=' special-qs';
+    return`<div class="${cls}" style="width:34px;height:50px;opacity:0.65;cursor:default;flex-shrink:0;">
+      <div style="font-size:11px;font-weight:700;">${c.joker?'★':c.rank}</div>
+      <div style="font-size:10px;">${c.suit}</div>
+    </div>`;
+  }).join('');
+}
+
 function renderAllMelds(){ renderAllPlayers(); }
 
 function renderAllPlayers(){
@@ -983,8 +1008,8 @@ function renderAllPlayers(){
       handHtml=sorted.map(c=>rc(c,false,null,false)).join('');
     }
 
-    // Action buttons and call row — only for active player
-    const actionsHtml=isActive?`
+    // Action buttons and call row — only for active HUMAN player
+    const actionsHtml=isActive&&!isCPU?`
       <div class="zone-actions" ontouchstart="event.stopPropagation()" ontouchend="event.stopPropagation()">
         <button class="btn primary" id="btn-meld" onclick="openMeld()" disabled>Meld selected</button>
         <button class="btn" id="btn-add" onclick="openAdd()" disabled>Add to meld</button>
@@ -998,6 +1023,10 @@ function renderAllPlayers(){
         <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Uncall</button>
       </div>`:'';
 
+    // Continue button for CPU zone when awaiting ack
+    const continueHtml=isActive&&isCPU&&G.awaitingCPUAck?
+      '<div style="margin-top:10px;text-align:center;"><button class="btn primary" style="padding:10px 28px;font-size:15px;" onclick="ackCPUDiscard()">Continue ▶</button></div>':'';
+
     const nameLabel=isHuman&&!isCPU?'You':p.name;
     const metaLabel=`${p.hand.length}🃏 · ${p.points}pts${p.declared?` · <span style="color:#e65100;">called ${p.declaredCount}</span>`:''}${p.id===G.dealerIdx?' ✦':''}`;
 
@@ -1008,7 +1037,7 @@ function renderAllPlayers(){
       </div>
       ${meldsHtml}
       <div class="zone-hand">${handHtml}${!p.hand.length&&!isActive?'<span style="font-size:11px;color:#aaa;">No cards</span>':''}</div>
-      ${actionsHtml}
+      ${actionsHtml}${continueHtml}
     </div>`;
   }).join('');
 
@@ -2187,19 +2216,9 @@ function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
   if(G.singleHumanMode){
     const name=G.players[G.currentIdx].name;
-    setCPUAction(`🤖 ${name} discarded — <button class="btn primary" style="margin-left:12px;padding:8px 20px;font-size:14px;" onclick="ackCPUDiscard()">Continue ▶</button>`);
-    // Also inject Continue button into the active player zone for visibility
-    const zoneEl=document.getElementById('pzone-'+G.currentIdx);
-    if(zoneEl){
-      const existing=zoneEl.querySelector('.zone-continue');
-      if(!existing){
-        const btn=document.createElement('div');
-        btn.className='zone-continue';
-        btn.style.cssText='margin-top:8px;text-align:center;';
-        btn.innerHTML='<button class="btn primary" style="padding:10px 28px;font-size:15px;" onclick="ackCPUDiscard()">Continue ▶</button>';
-        zoneEl.appendChild(btn);
-      }
-    }
+    G.awaitingCPUAck=true;
+    setCPUAction(`🤖 ${name} discarded`);
+    updateGame();
   } else if(G.allCPUMode){
     setTimeout(()=>endTurnHO(),speed*2);
   } else {
@@ -2208,15 +2227,15 @@ function cpuAfterDiscard(){
 }
 
 function ackCPUDiscard(){
+  G.awaitingCPUAck=false;
   clearCPUAction();
-  // Remove any zone-level continue button
-  document.querySelectorAll('.zone-continue').forEach(el=>el.remove());
   endTurnHO();
 }
 
 // ─────────────────────────────────────────────────────────────────
 
 function endTurnHO(){
+  G.awaitingCPUAck=false;
   const cp=G.players[G.currentIdx];
   cp.turnCount++;
   cp.hadMeldsAtTurnStart=cp.hasEverMelded;
