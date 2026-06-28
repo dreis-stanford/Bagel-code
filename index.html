@@ -1164,9 +1164,20 @@ function mPts(m){return m.cards.reduce((s,c)=>s+cPts(c,false),0);}
 
 function tSel(id){
   if(G.phase==='draw'){setWarn('Draw a card first.');return;}
-  // first-discard: allow multi-select for melding, but only one at a time for discard
   const i=G.sel.indexOf(id);if(i>=0)G.sel.splice(i,1);else G.sel.push(id);
-  renderHand();updateBtns();
+  // Update card selection visuals in-place without full re-render
+  const cp=G.players[G.currentIdx];
+  cp.hand.forEach(c=>{
+    const el=document.getElementById('hc-'+c.id);
+    if(!el)return;
+    const isSel=G.sel.includes(c.id);
+    let cls='card-el '+cCol(c);
+    if(isSel)cls+=' selected';
+    if(c.joker||c.wild)cls+=' special-wild';
+    if(c.qs)cls+=' special-qs';
+    el.className=cls;
+  });
+  updateBtns();
 }
 
 function updateBtns(){
