@@ -800,7 +800,7 @@ function showHandoff(){
       return;
     } else {
       showSc('game');G.sel=[];clearCPUAction();updateGame();
-      if(G.phase==='first-discard') setSt('You have 14 cards — select one to discard (or meld first).');
+      if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard (or meld first).`);
       else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
       setTimeout(()=>checkJokerNotifications(),300);
       return;
@@ -851,7 +851,8 @@ function showHandoff(){
 
 function revealTurn(){
   showSc('game');G.sel=[];clearCPUAction();updateGame();
-  if(G.phase==='first-discard') setSt('You have 14 cards — select one to discard before play begins.');
+  const cp=G.players[G.currentIdx];
+  if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard before play begins.`);
   else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
   setTimeout(()=>checkJokerNotifications(),300);
 }
@@ -891,6 +892,13 @@ function renderOthers(){
 
 function renderPiles(){
   document.getElementById('draw-ct').textContent=`${G.drawPile.length} cards`;
+  const inFirstDiscard=G.phase==='first-discard';
+  const drawBtn=document.getElementById('draw-pile-btn');
+  if(drawBtn){
+    drawBtn.style.opacity=inFirstDiscard?'0.35':'1';
+    drawBtn.style.pointerEvents=inFirstDiscard?'none':'auto';
+    drawBtn.title=inFirstDiscard?'No draw needed — just select a card and discard':'';
+  }
   const pile=G.discardPile;
   const top=pile[pile.length-1];
   document.getElementById('disc-top').innerHTML=top?rc(top):
@@ -2243,12 +2251,12 @@ function cpuDoDiscard(cp,card,goOut){
 
 function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
-  if(G.singleHumanMode){
+  if(G.singleHumanMode&&G.phase!=='first-discard'){
     const name=G.players[G.currentIdx].name;
     G.awaitingCPUAck=true;
     setCPUAction(`🤖 ${name} discarded`);
     updateGame();
-  } else if(G.allCPUMode){
+  } else if(G.allCPUMode||G.phase==='first-discard'){
     setTimeout(()=>endTurnHO(),speed*2);
   } else {
     setTimeout(()=>endTurnHO(),speed);
