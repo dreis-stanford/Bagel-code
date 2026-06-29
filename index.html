@@ -175,10 +175,6 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
 <!-- GAME -->
 <div id="screen-game" class="screen">
   <div class="flex between center mb-1">
-    <div>
-      <div style="font-size:18px;font-weight:500;" id="g-hand"></div>
-      <div class="muted" id="g-turn"></div>
-    </div>
     <div class="flex gap-8">
       <button class="btn small" onclick="showRules('ui')">?</button>
       <button class="btn small" onclick="showFeedback()">Feedback</button>
@@ -220,6 +216,10 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
         <div id="status-bar" class="status-bar" style="display:none;margin:0;border-radius:0;"></div>
         <div id="warn-bar" class="warning-bar" style="display:none;margin:0;border-radius:0;"></div>
         <div id="cpu-action-bar" style="display:none;"></div>
+      </div>
+      <div class="sidebar-panel" style="text-align:center;">
+        <div style="font-size:15px;font-weight:500;" id="g-hand"></div>
+        <div class="muted" id="g-turn"></div>
       </div>
     </div>
   </div>
@@ -931,6 +931,11 @@ function rcSmall(c){
   return`<div class="${cls}" style="width:32px;height:46px;border-radius:4px;flex-shrink:0;position:relative;" ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:9px;">${c.suit}</div>${declLabel}${deckDot2}</div>`;
 }
 
+function pushMeld(cp, cards, type){
+  if(!cards||cards.length<3){console.warn('pushMeld: rejected sub-3 meld',cards?.length,type);return;}
+  const nm={cards,type};sortMeld(nm);cp.melds.push(nm);
+}
+
 function sortMeld(meld){
   if(meld.type==="run"){
     const rankOf=c=>{
@@ -1462,7 +1467,7 @@ function confirmPickup(){
     const meldCards=[topCard,...selNatCards].filter(Boolean);
     const v=valMeld(meldCards);
     if(v.valid){
-      const pm={cards:meldCards,type:v.type};sortMeld(pm);cp.melds.push(pm);
+      pushMeld(cp,meldCards,v.type);
       meldCards.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;
@@ -1918,7 +1923,7 @@ function cpuMeldAsync(cp,speed,onDone){
     const v=valMeld(meld);
     if(v.valid){
       if(v.type==='run'){const rr=tryRun(meld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-      const nm={cards:meld,type:v.type};sortMeld(nm);cp.melds.push(nm);
+      pushMeld(cp,meld,v.type);
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;
@@ -2014,13 +2019,18 @@ function cpuDraw(cp){
             const vm=valMeld(merged);
             if(vm.valid&&vm.type===cp.melds[meldIdx].type){
               cp.melds[meldIdx].cards=merged;sortMeld(cp.melds[meldIdx]);
+            } else if(meldFromHand.length>=3){
+              // Only create a new meld if we have enough cards
+              pushMeld(cp,meldFromHand,v.type);
             } else {
-              const nm={cards:meldFromHand,type:v.type};sortMeld(nm);cp.melds.push(nm);
+              // Too few hand cards for a standalone meld — just extend existing meld anyway
+              cp.melds[meldIdx].cards=[...cp.melds[meldIdx].cards,...meldFromHand];sortMeld(cp.melds[meldIdx]);
             }
           }
-          else{const nm={cards:meldFromHand,type:v.type};sortMeld(nm);cp.melds.push(nm);}
+          else if(meldFromHand.length>=3){pushMeld(cp,meldFromHand,v.type);}
+          // else: can't form a valid standalone meld from hand cards alone — skip
         } else {
-          const nm={cards:bestMeld,type:v.type};sortMeld(nm);cp.melds.push(nm);
+          pushMeld(cp,bestMeld,v.type);
         }
         meldFromHand.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -2053,7 +2063,7 @@ function cpuMeld(cp){
             if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
           });
         }
-        const newMeld4={cards:meld,type:v.type};sortMeld(newMeld4);cp.melds.push(newMeld4);
+        pushMeld(cp,meld,v.type);
         meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         const djk3=meld.filter(c=>c.joker&&c.declaredAs);if(djk3.length)addJokerNotification(cp.name,djk3);
@@ -2234,7 +2244,7 @@ function gamblerDiscard(cp){
           const v=valMeld(combo);
           if(v.valid){
             if(v.type==='run'){const rr=tryRun(combo);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-            const nm={cards:combo,type:v.type};sortMeld(nm);cp.melds.push(nm);
+            pushMeld(cp,combo,v.type);
             combo.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
             if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
             remaining=remaining.filter(c=>!combo.includes(c));
