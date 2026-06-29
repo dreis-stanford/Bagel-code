@@ -108,6 +108,8 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - New UI: cpuAfterDiscard() skips awaitingCPUAck during first-discard phase
 - New UI: draw pile button visually disabled during first-discard phase
 - New UI: isHumanTurn() guard on all human action entry points (tSel, drawCard, startPickup, openMeld, openAdd, openRedeem, doDiscard) prevents human from interacting during CPU turns
+- CPU single-card meld bug: added pushMeld() helper that guards all CPU meld creation against sub-3-card melds; fixed cpuDraw pile pickup path where meldFromHand could be <3 cards and get pushed as an invalid meld
+- UI: moved Hand # and current player display from top-left header to bottom of sidebar, freeing space in main player area
 
 ## Known issues / next session
 1. **Self-scoring** — not yet built
