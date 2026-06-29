@@ -2533,14 +2533,16 @@ function showRules(tab){
   } else {
     el.innerHTML=`
       <p><strong>Setup:</strong> Choose number of players, enter names, select human or CPU for each. CPU types: 🤖 Conservative (plays it safe) or 🎲 Gambler (holds cards hunting for a Bagel). Tap Deal first hand.</p>
+      <p style="margin-top:8px;"><strong>Screen layout:</strong> All players' zones are shown on the left — your active zone is highlighted with a border. The draw pile, discard pile, and hand scores are in the sidebar on the right.</p>
       <p style="margin-top:8px;"><strong>The Cut:</strong> Slide to choose where to cut the deck. Peek at the bottom card of your cut — if it's special (Deuce, Joker, Q♠) you keep it; keep peeking until you find a normal card. That card goes to the bottom of the draw pile — only you know what it is.</p>
       <p style="margin-top:8px;"><strong>Selecting cards:</strong> Tap a card to select it (highlighted border). Tap again to deselect. Select multiple cards for melding. Select exactly one to discard.</p>
       <p style="margin-top:8px;"><strong>Reordering your hand:</strong> Hold and drag a card to move it. This matters for wilds in runs — selection order from left to right determines which rank a wild fills.</p>
       <p style="margin-top:8px;"><strong>Melding:</strong> Select 3+ cards → tap Meld selected. For runs with a Joker, declare what card the Joker represents (the game auto-detects when unambiguous). You can also tap Add to meld to extend an existing meld.</p>
-      <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the discard pile top card. Select 2+ natural cards to meld with it, then confirm.</p>
+      <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the discard pile top card in the sidebar. Select 2+ natural cards to meld with it, then confirm.</p>
       <p style="margin-top:8px;"><strong>Redeeming a Joker:</strong> After drawing, tap Redeem joker. Select the joker to redeem — you need the natural card it was declared as in your hand.</p>
       <p style="margin-top:8px;"><strong>Calling cards:</strong> When required, the Call button appears before discarding. Tap it and confirm your card count.</p>
-      <p style="margin-top:8px;"><strong>Discard history:</strong> The small faded cards beside the top of the discard pile show recent discards — up to one full round back.</p>
+      <p style="margin-top:8px;"><strong>Discard history:</strong> The small faded cards beside the top discard card in the sidebar show recent discards — up to one full round back.</p>
+      <p style="margin-top:8px;"><strong>Human vs CPU — Continue button:</strong> After each CPU turn, a Continue ▶ button appears inside the CPU's zone. Tap it to proceed to your next turn.</p>
       <p style="margin-top:8px;"><strong>Passing the device (all-human):</strong> After each turn, a handoff screen shows the table state. Tap "I'm [Name] — show my hand" to reveal your cards.</p>
       <p style="margin-top:8px;"><strong>Scores:</strong> Tap Scores at any time to see the full scorecard. Bagel scores are circled ⊙, checks appear as ✓ ticks.</p>
       <p style="margin-top:8px;color:#666;font-size:12px;"><strong>Tip:</strong> The small colored dot in the corner of each card (red or blue) shows which physical deck it came from — useful for verifying no cards were lost or duplicated.</p>`;

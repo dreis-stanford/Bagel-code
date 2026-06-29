@@ -7,8 +7,7 @@ A family card game called "Bagel" built as a single HTML/JS/CSS file, targeting 
 - GitHub: https://github.com/dreis-stanford/Bagel-code (public)
 - Live: https://dreis-stanford.github.io/Bagel-code
 - Files: `index.html` (game), `RULES.md` (rules), `CONTEXT.md` (this file)
-- Branch `main`: stable old UI with all bug fixes
-- Branch `new-ui`: new all-players layout (in progress, has bugs)
+- Single branch: `main` — new UI with all bug fixes (old two-branch setup retired)
 
 ## Game overview
 - 106-card deck (2× standard 52 + 2 jokers, each card has `deck:0` or `deck:1` property)
@@ -52,7 +51,8 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Deck integrity: deck:0/deck:1 property on every card; auditDeck() accessible via Scores→Debug
 - Discard history: last N-1 cards beside top card; recent discards on handoff screen
 - Calling card loud modal notification to all players (human and CPU)
-- Two-column layout: game main + sidebar (table pts public, hand penalty private)
+- New UI: all players' zones visible at once on left panel; draw/discard piles and scores in right sidebar
+- Active player zone highlighted/enlarged with action buttons inline
 - Tap to select, hold & drag to reorder hand (8px threshold)
 - sortMeld sorts runs by declaredAs rank for wilds
 - Rules modal: two tabs — Game Rules and Playing on Screen
@@ -68,6 +68,15 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - `canBagelCached(cp)` — cached by id+turnCount+handLength
 - `shouldCall(cp)` — ≤3 cards after discard OR canBagelCached non-null
 - `normDecl(s)` — normalizes suit input (3C→3♣, 10s→10♠)
+- `sortMeld(meld)` — sorts run cards by rank (uses declaredAs for wilds)
+- `rcSmall(c)` — renders a small card element (used in meld displays)
+- `isHumanTurn()` — returns true only when current player is human; gates all human action functions
+- `renderAllPlayers()` — renders all player zones; replaces old renderOthers/renderHand/renderAllMelds; calls updateBtns()+updateDeclUI() at end to restore button state after every re-render
+- `G.awaitingCPUAck` flag controls Continue ▶ button rendering inside CPU zone
+- `tSel()` updates card CSS classes in-place (no full re-render) to prevent button/touch interference
+- `htouchStart` ignores touches on button elements
+- Action buttons only render for active human player zone (not CPU zones)
+- Piles in sidebar panel
 - Player types: 'human', 'conservative', 'gambler'
 - `singleHumanMode` / `allCPUMode` in G control handoff/flow
 - `cpuTurnId` guard prevents stale async callbacks
@@ -81,6 +90,7 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Bagel = circled ⊙ (+250); Dream = check ✓ (+100); mutually exclusive
 - Handoff screen only in all-human mode; single-human+CPU goes direct to game screen
 - Hidden CPU mode: game screen shown BEFORE runCPUInstant is called
+- first-discard phase applies only to handFirstPlayer (who holds 14 cards); all other players start in draw phase
 
 ## Bug fixes in main (stable)
 - Pile pickup meld extension now validates before merging (was illegally adding mismatched cards to existing melds)
@@ -90,44 +100,33 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - CPU calling cards now shows loud modal notification (same as human confirmDecl)
 - first-discard phase preserved correctly across all players in opening round (endTurnHO fix)
 - doDiscard no longer sets phase='draw' prematurely in first-discard path
-
-## New UI branch (new-ui) — in progress
-Design goal: all players' hands visible at once on the left panel, face-up or face-down per context, grouped with each player's melds. Draw/discard piles and scores moved to right sidebar. Active player zone highlighted/enlarged with action buttons inline.
-
-### New UI key changes
-- `renderAllPlayers()` replaces `renderOthers()`, `renderAllMelds()`, `renderHand()` — renders all player zones
-- `G.awaitingCPUAck` flag controls Continue ▶ button rendering inside CPU zone
-- `tSel()` updates card CSS classes in-place (no full re-render) to prevent button/touch interference
-- `htouchStart` ignores touches on button elements
-- Action buttons only render for active human player zone (not CPU zones)
-- Piles moved to sidebar panel
-
-### New UI known bugs (as of end of session)
-1. **All-human mode**: second player cannot draw or see discard pile after first player discards
-2. **Human+CPU**: flow still getting stuck in first-discard round in some cases
-3. **Discard pile**: intermittently not showing (renderPiles was accidentally deleted once — now restored)
-4. **Browser caching**: GitHub Pages propagation delay can cause old version to appear after push — wait ~2 min and hard refresh
+- New UI: updateBtns()/updateDeclUI() null-guard when no active human zone in DOM (CPU turns)
+- New UI: rcSmall() and sortMeld() were missing from new UI file — added
+- New UI: startGame() was missing jokerNotifications, awaitingCPUAck, keptByCutter, cutterBot, topPart, botPart fields
+- New UI: first-discard phase now only applies to handFirstPlayer; endTurnHO always sets phase='draw' for all subsequent players
+- New UI: renderAllPlayers() calls updateBtns()+updateDeclUI() after every re-render to prevent buttons resetting to disabled when G.sel is non-empty
+- New UI: cpuAfterDiscard() skips awaitingCPUAck during first-discard phase
+- New UI: draw pile button visually disabled during first-discard phase
+- New UI: isHumanTurn() guard on all human action entry points (tSel, drawCard, startPickup, openMeld, openAdd, openRedeem, doDiscard) prevents human from interacting during CPU turns
 
 ## Known issues / next session
-1. **New UI bugs** — see above; fix all-human and human+CPU first-discard flow
-2. **Self-scoring** — not yet built
-3. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
-4. **Xcode/SwiftUI transition** — planned after prototype is stable
-5. **Joker redemption meld not recognized** — redeemMustMeld flag may conflict with normal meld validation
-6. **Joker redemption — add to existing meld** — should allow adding redeemed joker to existing meld
-7. **Call/Discard combined button** — consider single "Discard (calling 2)" button to reduce taps
-8. **CPU hand count visible when Show CPU cards OFF** — fix in renderOthers
+1. **Self-scoring** — not yet built
+2. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
+3. **Xcode/SwiftUI transition** — planned after prototype is stable
+4. **Joker redemption meld not recognized** — redeemMustMeld flag may conflict with normal meld validation
+5. **Joker redemption — add to existing meld** — should allow adding redeemed joker to existing meld
+6. **Call/Discard combined button** — consider single "Discard (calling 2)" button to reduce taps
+7. **CPU hand count visible when Show CPU cards OFF** — fix in player zone meta label
 
 ## Session workflow
 - Upload index.html + CONTEXT.md at session start
-- For new-ui work: also upload the new-ui branch index.html
 - Syntax check: node -e with new Function()
-- Download and push to GitHub as index.html (to appropriate branch)
-- Test at https://dreis-stanford.github.io/Bagel-code (NOT in Claude artifact viewer)
+- When porting functions between files: run missing-function audit immediately — node -e comparing defined vs called functions between old and new file
+- Download and push to GitHub as index.html to main branch
+- Test at https://dreis-stanford.github.io/Bagel-code
 - Feedback via in-game Feedback button → copy to clipboard
 
 ## Branch strategy
-- `main`: stable old UI, safe for beta testers
-- `new-ui`: new all-players layout, work in progress
+- Single branch: `main`
 - GitHub web interface used for all pushes (iPad workflow)
 - No local Git — revert via GitHub commit history if needed
