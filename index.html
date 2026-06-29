@@ -931,6 +931,16 @@ function rcSmall(c){
   return`<div class="${cls}" style="width:32px;height:46px;border-radius:4px;flex-shrink:0;position:relative;" ${c.declaredAs?`title="${c.declaredAs}"`:''}><div style="font-size:10px;font-weight:700;">${c.joker?'★':c.rank}</div><div style="font-size:9px;">${c.suit}</div>${declLabel}${deckDot2}</div>`;
 }
 
+function sortMeld(meld){
+  if(meld.type==="run"){
+    const rankOf=c=>{
+      if(c.wild&&c.declaredAs){const r=c.declaredAs.replace(/[♠♥♦♣]/g,"").trim();return RO[r]||0;}
+      return c.wild?0:(RO[c.rank]||0);
+    };
+    meld.cards.sort((a,b)=>rankOf(a)-rankOf(b));
+  }
+}
+
 function renderAllMelds(){ renderAllPlayers(); }
 
 function renderAllPlayers(){
@@ -1217,7 +1227,13 @@ function reorderInsert(dragId,targetId){
 }
 function mPts(m){return m.cards.reduce((s,c)=>s+cPts(c,false),0);}
 
+function isHumanTurn(){
+  const cp=G.players[G.currentIdx];
+  return cp&&(!cp.type||cp.type==="human");
+}
+
 function tSel(id){
+  if(!isHumanTurn()) return;
   if(G.phase==='draw'){setWarn('Draw a card first.');return;}
   const i=G.sel.indexOf(id);if(i>=0)G.sel.splice(i,1);else G.sel.push(id);
   // Update card selection visuals in-place without full re-render
@@ -1284,6 +1300,7 @@ function updateDeclUI(){
 }
 
 function drawCard(){
+  if(!isHumanTurn()) return;
   if(G.phase!=='draw'){setWarn('Not your draw phase.');return;}
   if(!G.drawPile.length){endHandDead();return;}
   const drawn=G.drawPile.pop();
@@ -1296,6 +1313,7 @@ function drawCard(){
 
 // ── PILE PICKUP ──
 function startPickup(){
+  if(!isHumanTurn()) return;
   if(G.phase!=='draw'){setWarn('You can only pick up the pile during your draw phase.');return;}
   if(!G.discardPile.length){setWarn('The discard pile is empty.');return;}
   const cp=G.players[G.currentIdx];
@@ -1461,6 +1479,7 @@ function confirmPickup(){
 }
 
 function openMeld(){
+  if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   if(sel.length<3){setWarn('Select at least 3 cards.');return;}
@@ -1653,6 +1672,7 @@ function tryRun(cards){
 }
 
 function openAdd(){
+  if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   if(!sel.length){setWarn('Select cards to add.');return;}
@@ -1687,6 +1707,7 @@ function confirmAdd(mi){
 }
 
 function openRedeem(){
+  if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   const jkrs=[];
   G.players.forEach((p,pi)=>p.melds.forEach((m,mi)=>m.cards.forEach((c,ci)=>{if(c.joker)jkrs.push({pi,mi,ci,card:c,pn:p.name});})));
@@ -1742,6 +1763,7 @@ function confirmRedeem(i){
 }
 
 function doDiscard(){
+  if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   if(G.sel.length!==1){setWarn('Select exactly one card to discard.');return;}
   if(G.redeemMustMeld){setWarn('You must meld the redeemed Joker before discarding.');return;}
