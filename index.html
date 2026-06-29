@@ -1063,6 +1063,9 @@ function renderAllPlayers(){
   const el=document.getElementById('all-players-area');
   if(el) el.innerHTML=zonesHtml;
 
+  // Restore button states from current G.sel/G.phase after every re-render
+  updateBtns();
+  updateDeclUI();
 }
 
 function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;renderAllPlayers();}
@@ -2280,12 +2283,8 @@ function endTurnHO(){
   clearCPUAction();
   G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.redeemMustMeld=false;G.mustMeldTopId=null;
   G.currentIdx=(G.currentIdx+1)%G.players.length;
-  // Stay in first-discard phase until we cycle back to the hand's first player
-  if(G.phase==='first-discard'&&G.currentIdx!==G.handFirstPlayer){
-    // still in opening round
-  } else {
-    G.phase='draw';
-  }
+  // first-discard only applies to handFirstPlayer (who holds 14 cards). Everyone else draws.
+  G.phase='draw';
   clearSt();
   const next=G.players[G.currentIdx];
   if(next&&next.type!=='human'&&!G.optShowCPU&&(G.singleHumanMode||G.allCPUMode)){
