@@ -126,6 +126,11 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Ambiguous wild-in-run declaration bug: a Deuce (or Joker) that could validly extend a run from either end (e.g. Q,K,+wild = J-Q-K or Q-K-A) was silently resolved via selection click-order with no way for the player to confirm/override, unlike Jokers which already had a "declare" prompt for ambiguous cases — except that prompt was gated to Jokers only (`c.joker`) and ignored Deuces (`c.wild`). Generalized the declare/ambiguous-detection UI in `openMeld()`/`confirmMeld()` to all wild cards, and made `tryRun()` honor an explicit `declaredAs` so the chosen run interpretation matches the player's stated intent rather than click order.
 
 ## Known issues / next session
+**See `DEFERRED_BUGS.md` for full write-ups, reported examples, and
+investigation leads — that file is the source of truth for in-progress bug
+hunts; this list is just a short index.**
+
+0. **[TOP PRIORITY] CPU can merge two unrelated melds into one illegal combined meld** — reported again after the previous round of meld-validation fixes (Garlic: `9♥ 2♣ J♥ J♣ J♣ Q♥ 2♦` — actually a heart run + a Jacks set fused together). The earlier centralization (`commitNewMeld`/`commitAddToMeld`) fixed the specific bugs found so far, but this shows there's at least one more path creating illegal melds. See `DEFERRED_BUGS.md` for investigation leads (top suspect: `cpuDraw()`'s pile-pickup `meldIdx` lookup when a combo's "table naturals" span two different existing melds).
 1. **Self-scoring** — not yet built
 2. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
 3. **Xcode/SwiftUI transition** — planned after prototype is stable

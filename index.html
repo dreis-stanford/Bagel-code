@@ -956,8 +956,21 @@ function commitNewMeld(cp, cards){
 function commitAddToMeld(meld, addCards){
   if(!addCards||!addCards.length) return false;
   const combo=[...meld.cards,...addCards];
+  // Wild cards already in the meld may carry a declaredAs from BEFORE this
+  // extension (e.g. a 3-card run where a deuce was declared low). Adding more
+  // cards can change the valid run shape entirely (e.g. the gap the wild was
+  // filling gets taken by a new natural), which means that old declaration
+  // may no longer be correct. Clear it so tryRun freely recomputes the right
+  // position for the new, larger run — otherwise the wild keeps its stale
+  // label/rank, sortMeld sorts it into the wrong spot, and the meld looks
+  // (and partly is) corrupted even though the underlying cards are legal.
+  const prevDecls=new Map();
+  combo.forEach(c=>{if(c.wild){prevDecls.set(c,c.declaredAs);c.declaredAs=null;}});
   const v=valMeld(combo);
-  if(!v.valid||v.type!==meld.type) return false;
+  if(!v.valid||v.type!==meld.type){
+    prevDecls.forEach((val,c)=>{c.declaredAs=val;}); // restore — nothing changed
+    return false;
+  }
   meld.cards=combo;
   sortMeld(meld);
   return true;
@@ -1474,10 +1487,7 @@ function confirmPickup(){
     const meldIdx=fromTableCards[0]._fromMeldIdx;
     const existingMeld=cp.melds[meldIdx];
     if(existingMeld){
-      const combined=[...existingMeld.cards,topCard,...fromHandCards];
-      const v=valMeld(combined);
-      if(v.valid){
-        existingMeld.cards=combined;sortMeld(existingMeld);
+      if(commitAddToMeld(existingMeld,[topCard,...fromHandCards])){
         // Remove top card and any hand naturals from hand
         [topCard,...fromHandCards].forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -1975,10 +1985,7 @@ function cpuMeldAsync(cp,speed,onDone){
   }
   for(const em of cp.melds){
     for(const card of cp.hand){
-      const combined=[...em.cards,card];
-      const v2=valMeld(combined);
-      if(v2.valid&&v2.type===em.type){  // must preserve meld type
-        em.cards=combined;sortMeld(em);
+      if(commitAddToMeld(em,[card])){
         cp.hand=cp.hand.filter(h=>h.id!==card.id);
         if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         updateGame();
@@ -2111,10 +2118,7 @@ function cpuMeld(cp){
     // Also try adding to existing melds
     for(const existingMeld of cp.melds){
       for(const card of cp.hand){
-        const combined=[...existingMeld.cards,card];
-        const v2=valMeld(combined);
-        if(v2.valid&&v2.type===existingMeld.type){
-          existingMeld.cards=combined;
+        if(commitAddToMeld(existingMeld,[card])){
           cp.hand=cp.hand.filter(h=>h.id!==card.id);
           if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
           melded=true;
@@ -2148,6 +2152,11 @@ function combinations(arr,k){
 }
 
 function cpuDiscard(cp){
+  // Correct a stale call BEFORE checking whether a (possibly different) call
+  // is needed now — shouldCall() short-circuits to false once cp.declared is
+  // true, so without this a CPU that melded down further after calling would
+  // keep displaying its old, now-too-high, call count forever.
+  autoDecl();
   // Declare if needed
   if(shouldCall(cp)){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
@@ -2313,10 +2322,11 @@ function cpuDoDiscard(cp,card,goOut){
   }
   if(!goOut&&cp.missedDeclaration){
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
-    cp.missedDeclaration=false;updateGame();cpuAfterDiscard();return;
+    cp.missedDeclaration=false;autoDecl();updateGame();cpuAfterDiscard();return;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
   if(goOut){endHand(G.currentIdx);return;}
+  autoDecl(); // correct a stale call if this CPU melded further than its earlier call anticipated
   if(shouldCall(cp))cp.missedDeclaration=true;
   updateGame();cpuAfterDiscard();
 }
