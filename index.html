@@ -2603,57 +2603,25 @@ function fallbackCopy(text){
 }
 
 const FEEDBACK_EMAIL='reis.david.a@gmail.com';
-// Conservative safe budget for a mailto: URL's total encoded length. Some OS
-// mail handlers (notably Windows) truncate or silently fail well before any
-// official limit, commonly cited around ~2000 characters total — so we stay
-// comfortably under that for the WHOLE url (mailto: + address + subject +
-// body), not just the body.
-const MAILTO_SAFE_LIMIT=1800;
-
-// Binary-search the longest prefix of `text` whose encodeURIComponent()
-// length fits within maxEncodedLen. Needed because different characters
-// (e.g. ♥♦♣♠★ vs. plain ASCII) expand by very different amounts when
-// percent-encoded, so a simple character-count truncation could still
-// produce an over-length URL.
-function truncateForUrl(text,maxEncodedLen){
-  if(maxEncodedLen<=0) return '';
-  let lo=0,hi=text.length,best=0;
-  while(lo<=hi){
-    const mid=(lo+hi)>>1;
-    if(encodeURIComponent(text.slice(0,mid)).length<=maxEncodedLen){best=mid;lo=mid+1;}
-    else hi=mid-1;
-  }
-  return text.slice(0,best);
-}
+// Mail-link length where it's worth giving a heads-up. This is advisory
+// only, NOT a hard cutoff — real-world testing showed mailto: links well
+// past 6000 characters opening and sending correctly on at least some
+// platforms, and mail-handler tolerance varies a lot. Rather than guess
+// wrong and silently truncate someone's actual feedback, we always attempt
+// the full message and just warn when it's long enough that some mail
+// handlers MIGHT choke on it, suggesting Copy-to-clipboard as the
+// known-reliable fallback if "Open in Mail" doesn't come through complete.
+const MAILTO_WARN_LIMIT=1800;
 
 function emailFeedback(){
   const text=buildFeedbackText();
   const subject=encodeURIComponent('Bagel game feedback');
-  const fullUrl=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(text)}`;
-  if(fullUrl.length<=MAILTO_SAFE_LIMIT){
-    window.location.href=fullUrl;
-    return;
-  }
-  // Too long to reliably open as a single mailto: link (game state reports
-  // can easily exceed what some mail handlers — especially on Windows —
-  // support). Still open email with a TRUNCATED body so the email option
-  // works, but also copy the full untruncated report to the clipboard so
-  // nothing is lost if the user wants the complete details instead.
-  const note='\n\n[...report truncated to fit the email link — full untruncated report was also copied to your clipboard; paste that in instead if you want complete details...]';
-  const prefixLen=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=`.length;
-  const maxBodyEncodedLen=Math.max(0,MAILTO_SAFE_LIMIT-prefixLen-encodeURIComponent(note).length);
-  const truncatedText=truncateForUrl(text,maxBodyEncodedLen)+note;
-  const truncUrl=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(truncatedText)}`;
-  const notify=()=>{
+  const url=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(text)}`;
+  if(url.length>MAILTO_WARN_LIMIT){
     document.getElementById('fb-copy-msg').textContent=
-      `This report was too long for a full mail link, so a shortened version just opened in your mail app — the complete, untruncated report was also copied to your clipboard in case you'd rather paste that in instead. (To: ${FEEDBACK_EMAIL})`;
-  };
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(notify).catch(()=>{fallbackCopy(text);notify();});
-  } else {
-    fallbackCopy(text);notify();
+      `Heads up: this is a long report (${url.length} characters) — it should still open fine, but if your email comes through cut off or empty, use "Copy to clipboard" instead and paste it into an email to ${FEEDBACK_EMAIL} manually.`;
   }
-  window.location.href=truncUrl;
+  window.location.href=url;
 }
 
 function showRules(tab){
