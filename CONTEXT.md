@@ -58,7 +58,7 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Tap to select, hold & drag to reorder hand (8px threshold)
 - sortMeld sorts runs by declaredAs rank for wilds
 - Rules modal: two tabs — Game Rules and Playing on Screen
-- Feedback button: type selector + description + auto-captured game state; copy to clipboard or email
+- Feedback button: type selector + description + auto-captured game state; copy to clipboard or email. Email recipient hardcoded to reis.david.a@gmail.com. "Open in Mail" always sends the FULL untruncated report (no auto-truncation — real-world testing showed long mailto: links often work fine, and silently truncating someone's actual feedback was judged worse than occasionally needing the clipboard fallback); for long reports (>~1800 char encoded URL) it just shows an advisory "if this doesn't come through complete, use Copy to clipboard instead" warning rather than guessing wrong and rewriting their message.
 - Audit Deck button in Scores→Debug: shows popup with card counts and duplicates
 
 ## Architecture
@@ -144,12 +144,13 @@ hunts; this list is just a short index.**
 9. **Wild-declare prompt may over-trigger for sets with coincidentally same-suit naturals** — e.g. melding two same-rank-and-suit cards from different physical decks plus a wild: `trySet` correctly identifies it as a set (so the new generalized prompt is skipped), but this edge case wasn't exhaustively tested — watch for any regression where a wild-in-a-set is asked to "declare" unnecessarily.
 
 ## Session workflow
-- Upload index.html + CONTEXT.md at session start
+- Upload index.html + CONTEXT.md + DEFERRED_BUGS.md + FEATURE_REQUESTS.md (+ RULES.md if changed) at session start
 - Syntax check: node -e with new Function()
 - When porting functions between files: run missing-function audit immediately — node -e comparing defined vs called functions between old and new file
+- **Bump the build-version marker on every change**: there's an HTML comment right after `<!DOCTYPE html>` (`<!-- BUILD: YYYY-MM-DD-N -->`) and a matching small visible footer on the home/setup screen (`build YYYY-MM-DD-N`) — update BOTH to the same new value any time index.html changes, so staleness (browser cache or GitHub Pages propagation delay) can be confirmed/ruled out at a glance via "View Page Source" or just looking at the home screen, instead of guessing. This was added after a real instance of testing against a stale deployed copy and not realizing it.
 - Download and push to GitHub as index.html to main branch
-- Test at https://dreis-stanford.github.io/Bagel-code
-- Feedback via in-game Feedback button → copy to clipboard
+- Test at https://dreis-stanford.github.io/Bagel-code — verify the build marker on the home screen matches what was just pushed before testing/reporting anything
+- Feedback via in-game Feedback button → email (reis.david.a@gmail.com, pre-filled) or copy to clipboard
 
 ## Branch strategy
 - Single branch: `main`

@@ -14,7 +14,17 @@ pushed `index.html`, not a stale browser tab or an un-pushed GitHub Pages
 deploy.** This bug was reported in the same session as (and immediately
 after) the fixes for the "stale wild declaration" and "force-merge without
 validation" bugs above — it's possible the browser/page wasn't refreshed and
-the test was actually run against the pre-fix code. First step next session:
+the test was actually run against the pre-fix code. **Update: this exact
+caution was independently confirmed a few sessions later** — a "long
+feedback message" test came back showing behavior that only matched the
+pre-fix code (full untruncated body, no length-check ever firing), even
+though the length-check fix had already been delivered. The user's own
+conclusion was "maybe it was a cached version that just took a really long
+time to replace." So: stale caching of `index.html` (browser-side and/or
+GitHub Pages propagation delay) is a real, recurring source of "still
+broken after the fix" reports in this project, not just a theoretical
+caveat — treat it as the FIRST thing to rule out whenever a just-fixed bug
+appears to resurface. First step next session:
 hard-refresh (or open a private/incognito tab) on
 https://dreis-stanford.github.io/Bagel-code, confirm the deployed file
 matches the `index.html` with this session's fixes (e.g. check that
