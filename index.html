@@ -1715,14 +1715,14 @@ function openRedeem(){
   if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   const jkrs=[];
-  G.players.forEach((p,pi)=>p.melds.forEach((m,mi)=>m.cards.forEach((c,ci)=>{if(c.joker)jkrs.push({pi,mi,ci,card:c,pn:p.name});})));
-  if(!jkrs.length){setWarn('No jokers on the table.');return;}
+  cp.melds.forEach((m,mi)=>m.cards.forEach((c,ci)=>{if(c.joker)jkrs.push({pi:G.currentIdx,mi,ci,card:c,pn:cp.name});}));
+  if(!jkrs.length){setWarn('No jokers in your own melds.');return;}
   document.getElementById('redeem-opts').innerHTML=jkrs.map((it,i)=>{
     const decl=it.card.declaredAs||'(undeclared)';
     const canR=!!it.card.declaredAs&&cp.hand.some(c=>!c.wild&&cLbl(c)===it.card.declaredAs);
     return`<div style="display:flex;align-items:center;gap:12px;margin-bottom:0.75rem;padding:10px;background:#f0f0ec;border-radius:8px;">
       ${rc(it.card)}
-      <div><div style="font-size:13px;font-weight:500;">${it.pn}'s meld · declared as: ${decl}</div>
+      <div><div style="font-size:13px;font-weight:500;">Your meld · declared as: ${decl}</div>
       ${canR?`<button class="btn small primary" style="margin-top:6px;" onclick="confirmRedeem(${i})">Redeem with ${decl}</button>`:`<div style="font-size:12px;color:#c0392b;margin-top:4px;">${it.card.declaredAs?`Need ${decl} in your hand`:'No declaration — cannot redeem'}</div>`}
       </div></div>`;
   }).join('');
@@ -1756,14 +1756,10 @@ function confirmRedeem(i){
   if(!G.jokerNotifications) G.jokerNotifications=[];
   const seenBy=new Set([G.currentIdx]);
   G.jokerNotifications.push({
-    msg:`${cp.name} redeemed a Joker using ${redeemerLabel} — Joker (${jokerToReturn.declaredAs||'?'}) must now be melded`,
+    msg:`${cp.name} redeemed a Joker using ${redeemerLabel}`,
     seenBy, id:Date.now()
   });
-  showJokerNotifyModal(`Joker (${jokerToReturn.declaredAs||'?'}) redeemed using ${redeemerLabel}.\nYou must now meld the Joker — with 2+ naturals from hand, or add it to an existing meld.`);
-  // Enforce: joker must be melded before discarding
-  G.mustMeldTopId=jokerToReturn.id;
-  G.mustNaturalIds=null; // no specific naturals required — just must be melded
-  G.redeemMustMeld=true;
+  showJokerNotifyModal(`Joker (${jokerToReturn.declaredAs||'?'}) redeemed using ${redeemerLabel}.\nIt is now in your hand — meld it whenever you like (it keeps its declaration of ${jokerToReturn.declaredAs||'?'}, but you may redeclare it when you meld it).`);
   G.sel=[];cm('m-redeem');updateGame();
 }
 
@@ -2528,7 +2524,7 @@ function showRules(tab){
       <p style="margin-top:8px;"><strong>Each turn:</strong></p>
       <ol style="margin:4px 0 8px 16px;padding:0;">
         <li style="margin-bottom:4px;">Draw from the deck <em>or</em> pick up the entire discard pile (you must immediately meld the top card using 2+ naturals from your hand)</li>
-        <li style="margin-bottom:4px;">Optionally redeem a Joker from any meld on the table by providing the card it was declared as</li>
+        <li style="margin-bottom:4px;">Optionally redeem a Joker from one of your own melds by providing the card it was declared as — it returns to your hand and you may meld it whenever you like (no requirement to meld it right away)</li>
         <li style="margin-bottom:4px;">Meld cards to the table: sets of 3–4 same rank, or runs of 3+ cards in same suit. Any meld with wilds needs at least 2 natural cards.</li>
         <li>Discard one card — mandatory, even when going out</li>
       </ol>
@@ -2549,7 +2545,7 @@ function showRules(tab){
       <p style="margin-top:8px;"><strong>Reordering your hand:</strong> Hold and drag a card to move it. This matters for wilds in runs — selection order from left to right determines which rank a wild fills.</p>
       <p style="margin-top:8px;"><strong>Melding:</strong> Select 3+ cards → tap Meld selected. For runs with a Joker, declare what card the Joker represents (the game auto-detects when unambiguous). You can also tap Add to meld to extend an existing meld.</p>
       <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the discard pile top card in the sidebar. Select 2+ natural cards to meld with it, then confirm.</p>
-      <p style="margin-top:8px;"><strong>Redeeming a Joker:</strong> After drawing, tap Redeem joker. Select the joker to redeem — you need the natural card it was declared as in your hand.</p>
+      <p style="margin-top:8px;"><strong>Redeeming a Joker:</strong> After drawing, tap Redeem joker. You can only redeem a Joker from your own melds (you need the natural card it was declared as in your hand). It comes back into your hand and isn't required to be melded right away.</p>
       <p style="margin-top:8px;"><strong>Calling cards:</strong> When required, the Call button appears before discarding. Tap it and confirm your card count.</p>
       <p style="margin-top:8px;"><strong>Discard history:</strong> The small faded cards beside the top discard card in the sidebar show recent discards — up to one full round back.</p>
       <p style="margin-top:8px;"><strong>Human vs CPU — Continue button:</strong> After each CPU turn, a Continue ▶ button appears inside the CPU's zone. Tap it to proceed to your next turn.</p>

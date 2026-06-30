@@ -60,7 +60,7 @@ The player who went out deals the next hand. If a hand is dead (draw pile runs o
 Each turn follows this sequence:
 
 1. **Draw** — draw from the deck or pick up the entire discard pile (see Pile Pickup rules).
-2. **Redeem Jokers** — optionally redeem jokers from any meld (yours or another player's). The redeemed joker must be immediately melded (see Joker Redemption).
+2. **Redeem Jokers** — optionally redeem a Joker from one of your own melds (see Joker Redemption).
 3. **Meld / Add to Melds** — play cards to the table.
 4. **Discard** — you must always end your turn with a discard, including when going out.
 
@@ -92,11 +92,12 @@ The order in which cards are selected for a run defines the sequence (low to hig
 - No minimum point threshold to begin melding.
 
 ### Joker Redemption
-- After drawing (step 1 of your turn), a player may redeem a Joker from any meld on the table — yours or another player's.
+- After drawing (step 1 of your turn), a player may redeem a Joker from one of **their own melds only** — you cannot redeem a Joker from another player's meld.
 - To redeem, provide the natural card the Joker represents (the **redeemer**) and take the Joker into your hand.
-- **The redeemed Joker must be immediately melded** — with at least 2 natural cards from your hand, or by adding it to one of your existing melds. You cannot hold a redeemed Joker in your hand and discard without melding it.
+- There is **no requirement to immediately meld** the redeemed Joker. Since you can only redeem your own Jokers, you have necessarily already melded this hand, so the meld-before-discard step is already satisfied by your earlier play. You may hold the Joker and meld it whenever you choose — this turn or a later one.
 - The Joker retains its declaration from the original meld and may be re-declared when melded into a new context.
 - When a Joker is melded, all other players are notified of its declaration.
+- **Strategic note:** Redeeming a Joker only to sit on it is generally a poor play — you risk being caught holding it if another player goes out, and it doesn't help you set up a Bagel (since redeeming requires a Joker already on the table, meaning you've already melded this hand).
 
 ---
 
@@ -221,7 +222,7 @@ The highest scorer (after all bonuses) collects from each other player individua
 ## Quick Reference: Turn Checklist
 
 1. Draw from deck **OR** pick up entire discard pile (must immediately meld top card with 2 naturals).
-2. Optionally redeem Joker(s) from any meld — **must immediately meld the redeemed Joker**.
+2. Optionally redeem a Joker from your own meld(s) — no requirement to meld it right away.
 3. Meld and/or add to your own melds.
 4. Call if required: ≤3 cards after discard, or one draw could take you out. Only after first meld. Your responsibility — never automatic.
 5. Discard one card (mandatory, even when going out).

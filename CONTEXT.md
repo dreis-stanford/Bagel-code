@@ -18,6 +18,7 @@ A family card game called "Bagel" built as a single HTML/JS/CSS file, targeting 
 - "Calling cards" = announcing card count before discarding (formerly "declaring")
 - "Declaring a joker" = stating what card joker represents (keep this term)
 - "Redeemer" = natural card matching joker's declaration
+- Joker redemption: players may only redeem a Joker from their **own** melds (never another player's), and there is **no requirement to immediately meld** it after redeeming — it simply returns to their hand to be melded whenever they choose
 - Special cards: Deuces (wild), Jokers (wild), Queens of Spades (special, not wild)
 
 ## Current status — in beta testing
@@ -28,6 +29,7 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - All meld types with wild card rules, Q♠ position check
 - Wild position in runs determined by selection order (left=low, right=high)
 - Joker declaration, redemption with normDecl() normalization (3C→3♣)
+- Joker redemption restricted to a player's own melds only; redeemed Joker returns to hand with no immediate-meld requirement (openRedeem only lists current player's own melds; confirmRedeem no longer sets G.redeemMustMeld/G.mustMeldTopId)
 - _pendingDecl prevents joker pre-mutation on meld cancel
 - Joker notification modal on meld; redemption notification queued per player
 - Calling cards: only before discard, cannot go out same turn as calling
@@ -81,6 +83,9 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - `singleHumanMode` / `allCPUMode` in G control handoff/flow
 - `cpuTurnId` guard prevents stale async callbacks
 - `auditDeck()` — checks all card locations for duplicates/missing; in-game via Scores→Debug
+- `openRedeem()` — lists only the current player's own melds' jokers (not other players')
+- `confirmRedeem()` — swaps natural into the meld in place and returns the Joker to hand; does NOT set any "must meld" flag (rule change: own-Joker redemption has no immediate-meld requirement)
+- `G.redeemMustMeld` / `G.mustMeldTopId` fields still exist in state (used by pile-pickup enforcement) but are no longer set by joker redemption
 
 ## Key design decisions
 - Card order in selection = wild placement intent in runs
@@ -91,6 +96,7 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - Handoff screen only in all-human mode; single-human+CPU goes direct to game screen
 - Hidden CPU mode: game screen shown BEFORE runCPUInstant is called
 - first-discard phase applies only to handFirstPlayer (who holds 14 cards); all other players start in draw phase
+- Joker redemption: own-melds-only, no immediate-meld requirement — since a player can only redeem their own Joker, they've necessarily already melded this hand, so the once-per-turn-meld condition is already satisfied; holding a redeemed Joker is a known strategic blunder (risk of being caught with it, no Bagel benefit) but is now legal
 
 ## Bug fixes in main (stable)
 - Pile pickup meld extension now validates before merging (was illegally adding mismatched cards to existing melds)
@@ -110,15 +116,17 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - New UI: isHumanTurn() guard on all human action entry points (tSel, drawCard, startPickup, openMeld, openAdd, openRedeem, doDiscard) prevents human from interacting during CPU turns
 - CPU single-card meld bug: added pushMeld() helper that guards all CPU meld creation against sub-3-card melds; fixed cpuDraw pile pickup path where meldFromHand could be <3 cards and get pushed as an invalid meld
 - UI: moved Hand # and current player display from top-left header to bottom of sidebar, freeing space in main player area
+- Rule change: Joker redemption restricted to own melds only, and immediate-meld requirement removed (openRedeem/confirmRedeem updated; rules modal and RULES.md updated)
 
 ## Known issues / next session
 1. **Self-scoring** — not yet built
 2. **Gambler strategy** — needs real-game testing; bail conditions may need tuning
 3. **Xcode/SwiftUI transition** — planned after prototype is stable
-4. **Joker redemption meld not recognized** — redeemMustMeld flag may conflict with normal meld validation
-5. **Joker redemption — add to existing meld** — should allow adding redeemed joker to existing meld
+4. **Joker redemption meld not recognized** — likely resolved/moot now that immediate melding is no longer required; revisit if a related bug resurfaces when the player does choose to meld a held redeemed Joker
+5. **Joker redemption — add to existing meld** — should allow adding redeemed joker to existing meld (still applies whenever the player chooses to meld it)
 6. **Call/Discard combined button** — consider single "Discard (calling 2)" button to reduce taps
 7. **CPU hand count visible when Show CPU cards OFF** — fix in player zone meta label
+8. **CPU does not currently use joker redemption at all** — no CPU logic calls confirmRedeem; out of scope for this session but worth tracking since CPU could now reasonably redeem-and-hold a Joker
 
 ## Session workflow
 - Upload index.html + CONTEXT.md at session start
