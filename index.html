@@ -240,7 +240,10 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
 <div id="screen-final" class="screen">
   <h2>Final scores — game over</h2>
   <div id="final-content"></div>
-  <div class="mt-1"><button class="btn primary" onclick="location.reload()">New game</button></div>
+  <div class="mt-1 flex gap-8">
+    <button class="btn" onclick="showScores()">📊 View full scorecard</button>
+    <button class="btn primary" onclick="location.reload()">New game</button>
+  </div>
 </div>
 
 <!-- SCORE MODAL -->
@@ -270,7 +273,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <div id="meld-cards" class="flex gap-8 wrap mb-1"></div>
     <div id="meld-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
     <div id="jdecl-area" style="display:none;background:#f0f0ec;border-radius:8px;padding:10px;margin-bottom:0.75rem;">
-      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Declare joker(s)</div>
+      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Declare wild card(s)</div>
       <div id="jdecl-inputs"></div>
     </div>
     <button class="btn primary" style="width:100%" onclick="confirmMeld()">Confirm meld</button>
@@ -1533,7 +1536,27 @@ function openMeld(){
   // click order.
   const wlds=sel.filter(c=>c.wild);
   const wLbl=c=>c.joker?'Joker':`Wild (${cLbl(c)})`;
-  if(wlds.length&&!trySet(sel)){
+  const isSet=trySet(sel);
+  if(isSet){
+    // No positional ambiguity in a set (the rank is fixed = the set's rank),
+    // but a Joker still needs a concrete card declared so it can be
+    // redeemed later — a Deuce doesn't (Deuces are never redeemed; valMeld
+    // silently assigns it the set's rank for scoring purposes).
+    const jkrsInSet=sel.filter(c=>c.joker);
+    if(jkrsInSet.length){
+      const setRank=sel.find(c=>!c.wild).rank;
+      const usedSuits=new Set(sel.filter(c=>!c.wild).map(c=>c.suit));
+      document.getElementById('jdecl-inputs').innerHTML=jkrsInSet.map(j=>{
+        const suggestSuit=SUITS.find(s=>!usedSuits.has(s))||SUITS[0];
+        usedSuits.add(suggestSuit);
+        const suggested=setRank+suggestSuit;
+        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker represents (for future redemption):</label><input type="text" id="jd${j.id}" placeholder="e.g. ${setRank}♠" value="${j.declaredAs||suggested}" style="margin-bottom:0;"></div>`;
+      }).join('');
+      document.getElementById('jdecl-area').style.display='block';
+    } else {
+      document.getElementById('jdecl-area').style.display='none';
+    }
+  } else if(wlds.length){
     const nat=sel.filter(c=>!c.wild);
     const autoDecls={};
     const ambiguous=new Set();
@@ -1629,7 +1652,24 @@ function confirmMeld(){
 function valMeld(cards){
   const nat=cards.filter(c=>!c.wild),wld=cards.filter(c=>c.wild);
   if(wld.length>0&&nat.length<2) return{valid:false,msg:'Needs at least 2 natural cards when using wilds.'};
-  if(trySet(cards)) return{valid:true,type:'set'};
+  if(trySet(cards)){
+    // Sets don't have positional ambiguity like runs do, but wilds still need
+    // a concrete declaredAs: a Joker needs one so it can later be redeemed
+    // (the redeemer must hand over a specific natural card), and a Deuce
+    // needs one so it scores at the SET's rank instead of silently
+    // defaulting to a low placeholder value. If a value was already chosen
+    // (e.g. a human picked a suit for a Joker via the meld dialog), keep it.
+    const setRank=nat[0].rank;
+    const usedSuits=new Set(nat.map(c=>c.suit));
+    wld.forEach(w=>{
+      if(!w.declaredAs){
+        const availSuit=SUITS.find(s=>!usedSuits.has(s))||SUITS[0];
+        usedSuits.add(availSuit);
+        w.declaredAs=setRank+availSuit;
+      }
+    });
+    return{valid:true,type:'set'};
+  }
   const runResult=tryRun(cards); // returns {valid, assignedRanks} or false
   if(runResult){
     // Block joker declared as Q♠
@@ -1855,7 +1895,14 @@ function doDiscard(){
 function autoDecl(){
   const cp=G.players[G.currentIdx];
   if(!cp.hasEverMelded)return;
-  if(cp.declared&&cp.hand.length>(cp.declaredCount||99)){cp.declared=false;cp.declaredCount=null;}
+  // Invalidate a stale call only if the hand grew by MORE than the normal
+  // single card drawn this turn (e.g. picking up a multi-card discard pile).
+  // Using a plain ">" here (no tolerance) was the bug: right after every
+  // normal draw, hand.length becomes declaredCount+1, which is expected and
+  // should NOT invalidate the call — but it did, causing the call to be
+  // silently reset and then immediately re-declared (and re-announced) on
+  // every single turn even when nothing had actually changed.
+  if(cp.declared&&cp.hand.length>(cp.declaredCount||99)+1){cp.declared=false;cp.declaredCount=null;}
   // If CPU melded further after calling, update count downward to match current hand
   if(cp.declared&&cp.type&&cp.type!=='human'&&cp.hand.length<(cp.declaredCount||99)){
     const newCount=cp.hand.length-1;

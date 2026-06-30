@@ -9,6 +9,19 @@ pruned once stable.
 
 ## OPEN — CPU can merge two unrelated melds into one illegal combined meld
 
+**⚠ Before re-investigating: confirm this was reproduced on the latest
+pushed `index.html`, not a stale browser tab or an un-pushed GitHub Pages
+deploy.** This bug was reported in the same session as (and immediately
+after) the fixes for the "stale wild declaration" and "force-merge without
+validation" bugs above — it's possible the browser/page wasn't refreshed and
+the test was actually run against the pre-fix code. First step next session:
+hard-refresh (or open a private/incognito tab) on
+https://dreis-stanford.github.io/Bagel-code, confirm the deployed file
+matches the `index.html` with this session's fixes (e.g. check that
+`commitAddToMeld` exists and clears `declaredAs` before validating), and only
+then try to reproduce this specific meld again. If it no longer reproduces,
+this entry can likely be closed/merged into "Resolved this session" below.
+
 **Reported example (Hand 3, Turn 2, Garlic/conservative):**
 Meld shown as one 7-card group: `9♥ 2♣ J♥ J♣ J♣ Q♥ 2♦`
 (2♣ and 2♦ are wild deuces.)
@@ -121,3 +134,35 @@ after the fact from a static snapshot.
   meld-time correction) and from `cpuDoDiscard()` (post-discard, mirroring
   the human discard-time correction) so all CPU discard paths — conservative
   and gambler alike — get the same correction.
+- **"Declare wild card(s)" popup said "Declare joker(s)"** — cosmetic but
+  confusing leftover text from before the declare UI was generalized to all
+  wild cards; fixed to a generic label.
+- **Wild cards melded into a SET never got a `declaredAs`** — `valMeld()`
+  returned immediately for sets (`if(trySet(cards)) return{valid:true,type:'set'}`)
+  without ever running the declaration-assignment logic, which only existed
+  in the run branch. This meant a Joker melded into a set could never be
+  redeemed later (nothing to match a redeemer against — reported as "didn't
+  ask me what I wanted the joker to be"), and a Deuce melded into a set
+  silently scored at a wrong placeholder value instead of the set's actual
+  rank. Fixed: `valMeld()` now assigns every wild in a set a concrete
+  rank+suit (the set's rank + an unused suit) if it doesn't already have
+  one, and `openMeld()` additionally prompts the human to confirm/override
+  that suggestion specifically for Jokers (Deuces are handled silently since
+  they're never redeemed and only need the rank to be correct for scoring).
+- **CPU "calling cards" popup repeated every turn even with no real change**
+  — `autoDecl()`'s stale-call invalidation check (`cp.hand.length>cp.declaredCount`)
+  didn't tolerate the normal +1 card from that turn's draw, so right after
+  every single draw it wrongly invalidated an otherwise-still-valid call;
+  `shouldCall()` then immediately re-declared (and re-announced) the exact
+  same count, producing a popup every turn instead of only when the call
+  actually changed. This bug pre-dated this session but was invisible since
+  `autoDecl()` was never called for CPU players until the "stale call count"
+  fix above started calling it every turn — exposing the latent flaw. Fixed
+  by only invalidating when the hand grows by *more* than one card (i.e. an
+  actual abnormal pickup), not on the routine single draw.
+- **No way to see the full hand-by-hand scorecard at game end** — the final
+  "game over" screen only showed the end-of-game summary table (final
+  totals), not the detailed per-hand history. Added a "View full scorecard"
+  button on the final screen that opens the existing `showScores()` modal
+  (the same one used mid-game via the Scores button), rather than building a
+  second copy of that table.
