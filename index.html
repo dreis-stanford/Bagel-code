@@ -2585,7 +2585,7 @@ function copyFeedback(){
   const text=buildFeedbackText();
   if(navigator.clipboard&&navigator.clipboard.writeText){
     navigator.clipboard.writeText(text).then(()=>{
-      document.getElementById('fb-copy-msg').textContent='✓ Copied! Paste into email, Notes, or Messages.';
+      document.getElementById('fb-copy-msg').textContent=`✓ Copied! Paste into an email to ${FEEDBACK_EMAIL} (or Notes/Messages).`;
     }).catch(()=>fallbackCopy(text));
   } else {
     fallbackCopy(text);
@@ -2597,16 +2597,63 @@ function fallbackCopy(text){
   const ta=document.createElement('textarea');
   ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
   document.body.appendChild(ta);ta.select();
-  try{document.execCommand('copy');document.getElementById('fb-copy-msg').textContent='✓ Copied!';}
-  catch(e){document.getElementById('fb-copy-msg').textContent='Could not copy — please select and copy the text above manually.';}
+  try{document.execCommand('copy');document.getElementById('fb-copy-msg').textContent=`✓ Copied! Paste into an email to ${FEEDBACK_EMAIL}.`;}
+  catch(e){document.getElementById('fb-copy-msg').textContent=`Could not copy — please select and copy the text above manually, then paste into an email to ${FEEDBACK_EMAIL}.`;}
   document.body.removeChild(ta);
+}
+
+const FEEDBACK_EMAIL='reis.david.a@gmail.com';
+// Conservative safe budget for a mailto: URL's total encoded length. Some OS
+// mail handlers (notably Windows) truncate or silently fail well before any
+// official limit, commonly cited around ~2000 characters total — so we stay
+// comfortably under that for the WHOLE url (mailto: + address + subject +
+// body), not just the body.
+const MAILTO_SAFE_LIMIT=1800;
+
+// Binary-search the longest prefix of `text` whose encodeURIComponent()
+// length fits within maxEncodedLen. Needed because different characters
+// (e.g. ♥♦♣♠★ vs. plain ASCII) expand by very different amounts when
+// percent-encoded, so a simple character-count truncation could still
+// produce an over-length URL.
+function truncateForUrl(text,maxEncodedLen){
+  if(maxEncodedLen<=0) return '';
+  let lo=0,hi=text.length,best=0;
+  while(lo<=hi){
+    const mid=(lo+hi)>>1;
+    if(encodeURIComponent(text.slice(0,mid)).length<=maxEncodedLen){best=mid;lo=mid+1;}
+    else hi=mid-1;
+  }
+  return text.slice(0,best);
 }
 
 function emailFeedback(){
   const text=buildFeedbackText();
   const subject=encodeURIComponent('Bagel game feedback');
-  const body=encodeURIComponent(text);
-  window.location.href=`mailto:reis.david.a@gmail.com?subject=${subject}&body=${body}`;
+  const fullUrl=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(text)}`;
+  if(fullUrl.length<=MAILTO_SAFE_LIMIT){
+    window.location.href=fullUrl;
+    return;
+  }
+  // Too long to reliably open as a single mailto: link (game state reports
+  // can easily exceed what some mail handlers — especially on Windows —
+  // support). Still open email with a TRUNCATED body so the email option
+  // works, but also copy the full untruncated report to the clipboard so
+  // nothing is lost if the user wants the complete details instead.
+  const note='\n\n[...report truncated to fit the email link — full untruncated report was also copied to your clipboard; paste that in instead if you want complete details...]';
+  const prefixLen=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=`.length;
+  const maxBodyEncodedLen=Math.max(0,MAILTO_SAFE_LIMIT-prefixLen-encodeURIComponent(note).length);
+  const truncatedText=truncateForUrl(text,maxBodyEncodedLen)+note;
+  const truncUrl=`mailto:${FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(truncatedText)}`;
+  const notify=()=>{
+    document.getElementById('fb-copy-msg').textContent=
+      `This report was too long for a full mail link, so a shortened version just opened in your mail app — the complete, untruncated report was also copied to your clipboard in case you'd rather paste that in instead. (To: ${FEEDBACK_EMAIL})`;
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(notify).catch(()=>{fallbackCopy(text);notify();});
+  } else {
+    fallbackCopy(text);notify();
+  }
+  window.location.href=truncUrl;
 }
 
 function showRules(tab){
