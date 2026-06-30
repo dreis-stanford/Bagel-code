@@ -932,8 +932,35 @@ function rcSmall(c){
 }
 
 function pushMeld(cp, cards, type){
-  if(!cards||cards.length<3){console.warn('pushMeld: rejected sub-3 meld',cards?.length,type);return;}
-  const nm={cards,type};sortMeld(nm);cp.melds.push(nm);
+  // Single gate for creating brand-new melds. Always re-validates with valMeld
+  // regardless of what the caller believes — this is what prevents illegal
+  // (e.g. mixed run+set, or sub-3-card) melds from CPU or human code paths.
+  if(!commitNewMeld(cp, cards)){
+    console.warn('pushMeld: rejected invalid/incomplete meld',cards?.map(c=>c&&(c.rank+ (c.suit||''))));
+  }
+}
+
+// Creates a brand-new meld on cp if `cards` is a valid meld. Returns true/false.
+function commitNewMeld(cp, cards){
+  if(!cards||cards.length<3) return false;
+  const v=valMeld(cards);
+  if(!v.valid) return false;
+  const nm={cards,type:v.type};
+  sortMeld(nm);
+  cp.melds.push(nm);
+  return true;
+}
+
+// Extends an existing meld with addCards if the combined result is still a
+// single valid meld of the SAME type. Never partially applies. Returns true/false.
+function commitAddToMeld(meld, addCards){
+  if(!addCards||!addCards.length) return false;
+  const combo=[...meld.cards,...addCards];
+  const v=valMeld(combo);
+  if(!v.valid||v.type!==meld.type) return false;
+  meld.cards=combo;
+  sortMeld(meld);
+  return true;
 }
 
 function sortMeld(meld){
@@ -1490,17 +1517,22 @@ function openMeld(){
   if(sel.length<3){setWarn('Select at least 3 cards.');return;}
   document.getElementById('meld-cards').innerHTML=sel.map(c=>rc(c)).join('');
   document.getElementById('meld-err').textContent='';
-  const jkrs=sel.filter(c=>c.joker);
-  if(jkrs.length){
+  // Any wild card (Joker OR Deuce) can have an ambiguous position in a run —
+  // e.g. Q,K,+wild could be J-Q-K or Q-K-A. Both get the same declare/confirm
+  // treatment so the player's intent is explicit rather than guessed from
+  // click order.
+  const wlds=sel.filter(c=>c.wild);
+  const wLbl=c=>c.joker?'Joker':`Wild (${cLbl(c)})`;
+  if(wlds.length&&!trySet(sel)){
     const nat=sel.filter(c=>!c.wild);
     const autoDecls={};
     const ambiguous=new Set();
     if(nat.length>=2&&new Set(nat.map(c=>c.suit)).size===1){
-      // It's a run — try to auto-determine joker position
+      // It's a run — try to auto-determine each wild's position
       const runResult=tryRun(sel);
       if(runResult&&runResult.assignedRanks){
         runResult.assignedRanks.forEach(({card,rank})=>{
-          if(!card.joker) return;
+          if(!card.wild) return;
           // Check if a different valid position exists by trying all possible runStarts
           const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
           const minNat=natVals[0], wildCount=sel.filter(c=>c.wild).length;
@@ -1522,20 +1554,20 @@ function openMeld(){
         });
       }
     }
-    const needsInput=jkrs.filter(j=>!autoDecls[j.id]||ambiguous.has(j.id));
+    const needsInput=wlds.filter(j=>!autoDecls[j.id]||ambiguous.has(j.id));
     if(needsInput.length){
       document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>{
         const hint=ambiguous.has(j.id)?' (ambiguous — please specify)':'';
-        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker ${jkrs.indexOf(j)+1} represents${hint}:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`;
+        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">${wLbl(j)} represents${hint}:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`;
       }).join('');
       document.getElementById('jdecl-area').style.display='block';
     } else {
-      document.getElementById('jdecl-inputs').innerHTML=jkrs.map(j=>`<input type="hidden" id="jd${j.id}" value="${autoDecls[j.id]}">`).join('');
+      document.getElementById('jdecl-inputs').innerHTML=wlds.map(j=>`<input type="hidden" id="jd${j.id}" value="${autoDecls[j.id]}">`).join('');
       document.getElementById('jdecl-area').style.display='none';
       document.getElementById('meld-err').style.color='#2e7d32';
-      document.getElementById('meld-err').textContent=`Joker auto-declared as: ${jkrs.map(j=>autoDecls[j.id]).join(', ')}`;
+      document.getElementById('meld-err').textContent=`Auto-declared: ${wlds.map(j=>`${wLbl(j)}=${autoDecls[j.id]}`).join(', ')}`;
     }
-    jkrs.forEach(j=>{if(autoDecls[j.id]&&!ambiguous.has(j.id))j._pendingDecl=autoDecls[j.id];});
+    wlds.forEach(j=>{if(autoDecls[j.id]&&!ambiguous.has(j.id))j._pendingDecl=autoDecls[j.id];});
   } else document.getElementById('jdecl-area').style.display='none';
   document.getElementById('m-meld').style.display='flex';
 }
@@ -1551,9 +1583,10 @@ function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   document.getElementById('meld-err').style.color='#c0392b';
-  sel.filter(c=>c.joker).forEach(j=>{
+  sel.filter(c=>c.wild).forEach(j=>{
     const i=document.getElementById(`jd${j.id}`);
-    j.declaredAs=normDecl(i?.value.trim()||j._pendingDecl||'')||j.declaredAs||null;
+    const typed=i?.value.trim();
+    if(typed||j._pendingDecl) j.declaredAs=normDecl(typed||j._pendingDecl)||j.declaredAs||null;
     delete j._pendingDecl;
   });
 
@@ -1573,8 +1606,7 @@ function confirmMeld(){
 
   const v=valMeld(sel);
   if(!v.valid){document.getElementById('meld-err').textContent=v.msg;return;}
-
-  const newMeld2={cards:sel,type:v.type};sortMeld(newMeld2);cp.melds.push(newMeld2);
+  if(!commitNewMeld(cp, sel)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   G.sel=[];cp.hasEverMelded=true;
   if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;G.redeemMustMeld=false;}
@@ -1612,6 +1644,15 @@ function valMeld(cards){
 }
 
 function trySet(c){if(c.length<3||c.length>4)return false;return new Set(c.filter(x=>!x.wild).map(x=>x.rank)).size===1;}
+
+// If a wild card already has an explicit declaredAs (e.g. the player typed
+// "A♥" for an ambiguous run position), extract the rank it represents so
+// tryRun can honor that intent instead of guessing from selection order.
+function declRank(c){
+  if(!c.declaredAs) return null;
+  const m=String(c.declaredAs).match(/^(A|K|Q|J|10|[2-9])/);
+  return m?RO[m[1]]:null;
+}
 
 function tryRun(cards){
   // Returns {valid:true, suit, assignedRanks:[{card,rank}]} or false
@@ -1668,7 +1709,10 @@ function tryRun(cards){
         assignedRanks.push({card:natByRank.get(rank),rank});
       } else {
         if(wildIdx>=wilds.length){valid=false;break;}
-        assignedRanks.push({card:wilds[wildIdx++],rank});
+        const w=wilds[wildIdx++];
+        const dr=declRank(w);
+        if(dr!==null&&dr!==rank){valid=false;break;} // respect explicit declaration
+        assignedRanks.push({card:w,rank});
       }
     }
     if(valid&&wildIdx===wilds.length) return{valid:true,suit,assignedRanks};
@@ -1697,14 +1741,14 @@ function confirmAdd(mi){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   const em=cp.melds[mi];
-  const combo=[...em.cards,...sel];
-  const v=valMeld(combo);
-  if(!v.valid){document.getElementById('add-err').textContent=v.msg;return;}
-  if(v.type!==em.type){document.getElementById('add-err').textContent='Cannot change meld type when adding cards.';return;}
+  // Pre-check for a friendly error message before attempting the real commit.
+  const preview=valMeld([...em.cards,...sel]);
+  if(!preview.valid){document.getElementById('add-err').textContent=preview.msg;return;}
+  if(preview.type!==em.type){document.getElementById('add-err').textContent='Cannot change meld type when adding cards.';return;}
   if(G.redeemMustMeld&&!sel.some(c=>c.id===G.mustMeldTopId)){
     document.getElementById('add-err').textContent='Must include the redeemed Joker!';return;
   }
-  em.cards=combo;sortMeld(em);
+  if(!commitAddToMeld(em,sel)){document.getElementById('add-err').textContent='Not a valid meld.';return;}
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
   if(G.redeemMustMeld&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.redeemMustMeld=false;}
@@ -2007,30 +2051,27 @@ function cpuDraw(cp){
       const v=valMeld(bestMeld);
       if(v.valid){
         if(v.type==='run'){const rr=tryRun(bestMeld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
+        let committedHandCards=[];
         if(meldFromTable.length>0){
           // Extend existing meld rather than create duplicate
           const meldIdx=cp.melds.findIndex(m=>m.cards.some(c=>meldFromTable.some(t=>t.id===c.id)));
           if(meldIdx>=0){
-            const merged=[...cp.melds[meldIdx].cards,...meldFromHand];
-            const vm=valMeld(merged);
-            if(vm.valid&&vm.type===cp.melds[meldIdx].type){
-              cp.melds[meldIdx].cards=merged;sortMeld(cp.melds[meldIdx]);
-            } else if(meldFromHand.length>=3){
-              // Only create a new meld if we have enough cards
-              pushMeld(cp,meldFromHand,v.type);
-            } else {
-              // Too few hand cards for a standalone meld — just extend existing meld anyway
-              cp.melds[meldIdx].cards=[...cp.melds[meldIdx].cards,...meldFromHand];sortMeld(cp.melds[meldIdx]);
+            if(commitAddToMeld(cp.melds[meldIdx],meldFromHand)){
+              committedHandCards=meldFromHand;
+            } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
+              committedHandCards=meldFromHand;
             }
+            // else: cannot validly commit these hand cards anywhere — leave them
+            // in hand rather than forcing an invalid merge onto the existing meld.
+          } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
+            committedHandCards=meldFromHand;
           }
-          else if(meldFromHand.length>=3){pushMeld(cp,meldFromHand,v.type);}
-          // else: can't form a valid standalone meld from hand cards alone — skip
         } else {
-          pushMeld(cp,bestMeld,v.type);
+          if(commitNewMeld(cp,bestMeld)) committedHandCards=meldFromHand;
         }
-        meldFromHand.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+        committedHandCards.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
-        cp.hasEverMelded=true;
+        if(committedHandCards.length) cp.hasEverMelded=true;
       }
       return;
     }
