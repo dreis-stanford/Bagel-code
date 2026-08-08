@@ -143,6 +143,29 @@ add-to-existing pass instead of retrying.
 
 ---
 
+## Resolved — CPU announcements & turn visibility (2026-08-08-5)
+
+- **CPU declarations announced twice** (joker declarations, calling cards,
+  redemptions). Callers were BOTH pushing onto `G.jokerNotifications` (marked
+  seen only by the acting player) AND immediately popping a modal. In
+  single-human mode the human watches CPU turns live, so they saw the modal
+  during the CPU's turn — then `checkJokerNotifications` fired it a second
+  time on their own turn, since the queue entry was still unseen by them.
+  Fixed with a single `announceEvent(msg, actingIdx)` entry point that is
+  mode-aware: in single-human mode it shows the modal once and marks the
+  entry seen by everyone (can't replay); in all-CPU watch mode it stays
+  silent; in pass-and-play it shows for the player at the device and stays
+  queued for the others. Verified: single-human 1 modal (was 2), watch mode
+  0, pass-and-play 1 live + 1 per other player on their turn.
+- **CPU turns were an unexplained blank "Continue"** — the human had no idea
+  what the bot had done. Added `cpuLog()` narration recording each action
+  (drew from deck / picked up the discard pile with count / melded <cards> /
+  added <card> to a meld / called N cards / discarded <card>), reset at the
+  start of every CPU turn and displayed as a readable summary panel directly
+  above the Continue button.
+
+---
+
 ## Resolved — rules-compliance audit (2026-08-08)
 
 Systematic pass comparing `index.html` against `RULES.md`. Found and fixed:

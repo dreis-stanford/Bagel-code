@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-3 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-6 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-3</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-6</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -275,7 +275,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <div id="meld-cards" class="flex gap-8 wrap mb-1"></div>
     <div id="meld-err" style="font-size:13px;color:#c0392b;min-height:18px;margin-bottom:8px;"></div>
     <div id="jdecl-area" style="display:none;background:#f0f0ec;border-radius:8px;padding:10px;margin-bottom:0.75rem;">
-      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Declare wild card(s)</div>
+      <div style="font-size:13px;font-weight:500;margin-bottom:6px;">What does the wild stand in for?</div>
       <div id="jdecl-inputs"></div>
     </div>
     <button class="btn primary" style="width:100%" onclick="confirmMeld()">Confirm meld</button>
@@ -633,49 +633,58 @@ function pickByScore(items,scoreFn,temp){
   return scored[scored.length-1].it;
 }
 
-const CPU_NAMES={
-  conservative:['Plain','Pumpernickel','Egg','Cinnamon-Raisin'],
-  gambler:['Poppy','Everything','Garlic','Onion']
-};
-// Track which names have been used this setup
-let _usedCPUNames={conservative:[],gambler:[]};
+// The old 'conservative' vs 'gambler' split is retired — each CPU's identity
+// IS its persona, selected by name. Playing style is emergent from the
+// persona's weights rather than from a crude two-way type.
+const CPU_NAME_LIST=Object.keys(PERSONAS);
+// Kept for backward compat with any code that flattened this structure.
+const CPU_NAMES={cpu:CPU_NAME_LIST};
+let _usedCPUNames=[];
 
-function pickCPUName(type){
-  const pool=CPU_NAMES[type]||['CPU'];
-  const used=_usedCPUNames[type]||[];
-  const available=pool.filter(n=>!used.includes(n));
-  // If all used, reset and start again
-  if(!available.length){_usedCPUNames[type]=[];return pool[0];}
+// Picks an unused CPU name at random (used for the "Random CPU" option and
+// for auto-naming). Avoids duplicates within a single setup.
+function pickCPUName(){
+  const available=CPU_NAME_LIST.filter(n=>!_usedCPUNames.includes(n));
+  if(!available.length){_usedCPUNames=[];return CPU_NAME_LIST[0];}
   const name=available[Math.floor(Math.random()*available.length)];
-  (_usedCPUNames[type]=_usedCPUNames[type]||[]).push(name);
+  _usedCPUNames.push(name);
   return name;
 }
 
 function renderPlayerInputs(n){
-  _usedCPUNames={conservative:[],gambler:[]};
+  _usedCPUNames=[];
+  // Playing styles are intentionally NOT labelled here — each character's
+  // personality is discovered through play, which keeps games interesting.
+  const cpuOpts=CPU_NAME_LIST.map(nm=>`<option value="cpu:${nm}">🤖 ${nm}</option>`).join('');
   document.getElementById('pname-inputs').innerHTML=Array.from({length:n},(_,i)=>`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
       <input type="text" id="pn${i}" value="Player ${i+1}" style="flex:1;margin-bottom:0;">
-      <select id="pt${i}" onchange="onTypeChange(${i})" style="width:150px;margin-bottom:0;">
+      <select id="pt${i}" onchange="onTypeChange(${i})" style="width:170px;margin-bottom:0;">
         <option value="human">👤 Human</option>
-        <option value="conservative">🤖 Conservative</option>
-        <option value="gambler">🎲 Gambler</option>
+        <option value="cpu:random">🎲 Random CPU</option>
+        ${cpuOpts}
       </select>
     </div>`).join('');
   document.getElementById('setup-mode-hint').textContent='';
 }
 
+// Selector values are 'human', 'cpu:random', or 'cpu:<Name>'.
+function isCPUSel(v){return !!v&&v!=='human';}
+
 function onTypeChange(idx){
   const n=G.playerCount||4;
-  // Auto-name the player if they switched to a CPU type and still have default name
+  // Auto-name the player to match the chosen character.
   if(idx!==undefined){
-    const type=document.getElementById(`pt${idx}`)?.value;
+    const sel=document.getElementById(`pt${idx}`)?.value;
     const nameEl=document.getElementById(`pn${idx}`);
     const currentName=nameEl?.value||'';
-    const isDefaultName=/^Player \d+$/.test(currentName)||Object.values(CPU_NAMES).flat().includes(currentName);
-    if(type&&type!=='human'&&isDefaultName&&nameEl){
-      nameEl.value=pickCPUName(type);
-    } else if(type==='human'&&isDefaultName&&nameEl){
+    const isDefaultName=/^Player \d+$/.test(currentName)||CPU_NAME_LIST.includes(currentName);
+    if(isCPUSel(sel)&&isDefaultName&&nameEl){
+      const want=sel.slice(4); // strip 'cpu:'
+      // A specific character keeps its own name (that's how the persona is
+      // identified); 'random' draws an unused one.
+      nameEl.value=(want==='random')?pickCPUName():want;
+    } else if(sel==='human'&&isDefaultName&&nameEl){
       nameEl.value=`Player ${idx+1}`;
     }
   }
@@ -701,15 +710,27 @@ function onTypeChange(idx){
 function startGame(){
   const n=G.playerCount||4;
   const names=Array.from({length:n},(_,i)=>document.getElementById(`pn${i}`)?.value||`Player ${i+1}`);
-  const types=Array.from({length:n},(_,i)=>document.getElementById(`pt${i}`)?.value||'human');
-  const humanCount=types.filter(t=>t==='human').length;
-  const cpuCount=types.filter(t=>t!=='human').length;
+  const sels=Array.from({length:n},(_,i)=>document.getElementById(`pt${i}`)?.value||'human');
+  const humanCount=sels.filter(t=>t==='human').length;
+  const cpuCount=sels.filter(t=>t!=='human').length;
   if(humanCount>1&&cpuCount>0){alert('Mix not supported — all human, one human + CPU, or all CPU.');return;}
   const singleHumanMode=humanCount===1&&cpuCount>0;
   const allCPUMode=humanCount===0;
+  // Every CPU is simply type 'cpu' now; its behaviour comes from its persona.
+  // The persona is chosen by the selected character, falling back to the
+  // typed-in name (so a hand-typed "Poppy" still gets Poppy's personality),
+  // and finally to a random character.
+  const types=sels.map(v=>v==='human'?'human':'cpu');
+  const personaNames=sels.map((v,i)=>{
+    if(v==='human') return null;
+    const want=v.slice(4);
+    if(want&&want!=='random'&&PERSONAS[want]) return want;
+    if(PERSONAS[names[i]]) return names[i];
+    return pickCPUName();
+  });
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,type:types[i],persona:(types[i]&&types[i]!=='human')?personaFor(name):null,memory:null,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
+    players:names.map((name,i)=>({name,id:i,type:types[i],persona:personaNames[i]?personaFor(personaNames[i]):null,personaName:personaNames[i]||null,memory:null,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,redeemMustMeld:false,drewCard:false,
     handFirstPlayer:1,swapFirst:null,reordering:false,
@@ -741,7 +762,7 @@ function restoreSnapshot(snap){
 
 function dealHand(){
   G.snapshot=snapshotPlayers(); // save state before this hand
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.savedDeck=null; // will be saved after cut
   showCut(shuffle(createDeck()));
@@ -1190,9 +1211,21 @@ function renderAllPlayers(){
         <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Uncall</button>
       </div>`:'';
 
-    // Continue button for CPU zone when awaiting ack
-    const continueHtml=isActive&&isCPU&&G.awaitingCPUAck?
-      '<div style="margin-top:10px;text-align:center;"><button class="btn primary" style="padding:10px 28px;font-size:15px;" onclick="ackCPUDiscard()">Continue ▶</button></div>':'';
+    // Continue button for CPU zone when awaiting ack — now preceded by a
+    // plain-language summary of what this CPU actually did on its turn,
+    // instead of an unexplained "Continue".
+    let continueHtml='';
+    if(isActive&&isCPU&&G.awaitingCPUAck){
+      const acts=(G.cpuTurnLog&&G.cpuTurnLog.length)?G.cpuTurnLog:['took its turn'];
+      const items=acts.map(a=>`<li style="margin-bottom:2px;">${a}</li>`).join('');
+      continueHtml=`<div style="margin-top:10px;">
+        <div style="background:#eef4fb;border:1px solid #c3d7ec;border-radius:8px;padding:10px 12px;text-align:left;font-size:13px;color:#24405e;">
+          <div style="font-weight:600;margin-bottom:4px;">${p.name}'s turn</div>
+          <ul style="margin:0;padding-left:18px;">${items}</ul>
+        </div>
+        <div style="text-align:center;margin-top:8px;"><button class="btn primary" style="padding:10px 28px;font-size:15px;" onclick="ackCPUDiscard()">Continue ▶</button></div>
+      </div>`;
+    }
 
     const nameLabel=isHuman&&!isCPU?'You':p.name;
     const metaLabel=`${p.hand.length}🃏 · ${p.points}pts${p.declared?` · <span style="color:#e65100;">called ${p.declaredCount}</span>`:''}${p.id===G.dealerIdx?' ✦':''}`;
@@ -1220,12 +1253,51 @@ function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;ren
 
 function renderHand(){ renderAllPlayers(); }
 
-function addJokerNotification(playerName, jokers){
+// Single entry point for "everyone should know about this" events (joker
+// declarations, calling cards, redemptions).
+//
+// The duplicate-announcement bug: callers used to BOTH push onto the queue
+// (seen only by the acting player) AND immediately pop a modal. In
+// single-human mode the human watches CPU turns live, so they saw the modal
+// during the CPU's turn — and then checkJokerNotifications fired it a second
+// time when their own turn came around, because the queue entry was still
+// unseen by them.
+//
+// Fix: if the humans present have already witnessed the modal, mark the entry
+// as seen by everyone so it can't replay. In pass-and-play the other players
+// genuinely weren't looking, so it stays queued for them.
+// ── CPU turn narration ────────────────────────────────────────────
+// Records what a CPU actually did on its turn, so the human isn't staring at
+// a blank "Continue" with no idea what happened.
+function cpuLog(msg){
+  if(!G.cpuTurnLog) G.cpuTurnLog=[];
+  G.cpuTurnLog.push(msg);
+}
+function cpuLogReset(){ G.cpuTurnLog=[]; }
+function cpuLogCards(cards){ return cards.map(c=>cLbl(c)).join(' '); }
+
+function announceEvent(msg,actingIdx){
   if(!G.jokerNotifications) G.jokerNotifications=[];
+  if(actingIdx===undefined) actingIdx=G.currentIdx;
+  const seenBy=new Set([actingIdx]);
+  if(G.allCPUMode){
+    // Watch mode — nobody needs a modal for every bot action.
+    G.players.forEach((p,i)=>seenBy.add(i));
+  } else if(G.singleHumanMode){
+    // One human, watching the whole game live on this screen.
+    showJokerNotifyModal(msg);
+    G.players.forEach((p,i)=>seenBy.add(i));
+  } else {
+    // Pass & play: the player at the device sees it now, others on their turn.
+    showJokerNotifyModal(msg);
+  }
+  G.jokerNotifications.push({msg,seenBy,id:Date.now()});
+  G.jokerNotifications=G.jokerNotifications.filter(n=>n.seenBy.size<G.players.length);
+}
+
+function addJokerNotification(playerName, jokers){
   const msg=jokers.map(j=>`★ Joker declared as ${j.declaredAs}`).join(', ');
-  // All other players need to see this
-  const seenBy=new Set([G.currentIdx]);
-  G.jokerNotifications.push({msg:`${playerName} melded: ${msg}`, seenBy, id:Date.now()});
+  announceEvent(`${playerName} melded: ${msg}`);
 }
 
 function checkJokerNotifications(){
@@ -1613,6 +1685,83 @@ function confirmPickup(){
   cm('m-pickup');updateGame();
 }
 
+// Enumerates every LEGAL way the wild(s) in `sel` could be assigned, so the
+// player can just tap the one they meant instead of typing a card name.
+// Returns [{assignments:[{id, decl}], label}], deduped. Respects the Q♠ rule.
+function wildAssignmentOptions(sel){
+  const wilds=sel.filter(c=>c.wild);
+  if(!wilds.length) return [];
+  const saved=wilds.map(w=>w.declaredAs);
+  wilds.forEach(w=>w.declaredAs=null); // enumerate freely, restore below
+  const opts=[];
+  try{
+    const nat=sel.filter(c=>!c.wild);
+    if(!nat.length) return [];
+    if(trySet(sel)){
+      // Set: rank is fixed; only the suit varies (and never Q♠).
+      const rank=nat[0].rank;
+      const used=new Set(nat.map(c=>c.suit));
+      const avail=SUITS.filter(su=>!used.has(su)&&!(rank==='Q'&&su==='♠'));
+      const pick=(remaining,chosen)=>{
+        if(chosen.length===wilds.length){
+          opts.push({assignments:wilds.map((w,i)=>({id:w.id,decl:rank+chosen[i]}))});
+          return;
+        }
+        remaining.forEach((su,i)=>pick(remaining.filter((_,j)=>j!==i),[...chosen,su]));
+      };
+      pick(avail,[]);
+    } else {
+      // Run: each valid starting rank yields one arrangement.
+      if(new Set(nat.map(c=>c.suit)).size>1) return [];
+      const suit=nat[0].suit;
+      const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
+      const minNat=natVals[0],n=sel.length,wc=wilds.length;
+      const hasQS=nat.some(c=>c.qs);
+      const nameOf=r=>Object.keys(RO).find(k=>RO[k]===r)||String(r);
+      for(let start=minNat-wc;start<=minNat;start++){
+        const end=start+n-1;
+        if(start<3||end>14) continue;
+        const byRank=new Map(nat.map(c=>[RO[c.rank],c]));
+        let wi=0,ok=true;const asg=[];
+        for(let r=start;r<=end;r++){
+          if(byRank.has(r)) continue;
+          if(wi>=wilds.length){ok=false;break;}
+          if(suit==='♠'&&r===12&&!hasQS){ok=false;break;} // no wild on Q♠
+          asg.push({id:wilds[wi].id,decl:nameOf(r)+suit});
+          wi++;
+        }
+        if(ok&&wi===wilds.length) opts.push({assignments:asg});
+      }
+    }
+  } finally { wilds.forEach((w,i)=>{w.declaredAs=saved[i];}); }
+  const seen=new Set();
+  return opts.filter(o=>{
+    const k=o.assignments.map(a=>a.id+':'+a.decl).join('|');
+    if(seen.has(k)) return false; seen.add(k); return true;
+  });
+}
+
+let _wildOpts=[],_wildOptIdx=0;
+
+function renderWildOptions(){
+  const box=document.getElementById('jdecl-inputs');
+  if(!_wildOpts.length){document.getElementById('jdecl-area').style.display='none';return;}
+  const chip=(o,i)=>{
+    const on=i===_wildOptIdx;
+    const cards=o.assignments.map(a=>{
+      const red=a.decl.includes('♥')||a.decl.includes('♦');
+      return `<span style="display:inline-block;background:#fff;border:1px solid rgba(0,0,0,.2);border-radius:5px;padding:3px 8px;margin:0 3px;font-weight:700;font-size:15px;color:${red?'#c0392b':'#222'};">${a.decl}</span>`;
+    }).join('');
+    return `<button onclick="selectWildOption(${i})" style="display:block;width:100%;text-align:left;margin-bottom:6px;padding:8px 10px;border-radius:8px;cursor:pointer;
+      border:2px solid ${on?'#2E4057':'rgba(0,0,0,.15)'};background:${on?'#e8eef5':'#f7f7f5'};">
+      <span style="font-size:12px;color:#555;">${on?'✓ ':''}${_wildOpts.length>1?'Wild becomes':'Wild will be'}</span> ${cards}</button>`;
+  };
+  box.innerHTML=_wildOpts.map(chip).join('');
+  document.getElementById('jdecl-area').style.display='block';
+}
+
+function selectWildOption(i){ _wildOptIdx=i; renderWildOptions(); }
+
 function openMeld(){
   if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
@@ -1620,78 +1769,28 @@ function openMeld(){
   if(sel.length<3){setWarn('Select at least 3 cards.');return;}
   document.getElementById('meld-cards').innerHTML=sel.map(c=>rc(c)).join('');
   document.getElementById('meld-err').textContent='';
-  // Any wild card (Joker OR Deuce) can have an ambiguous position in a run —
-  // e.g. Q,K,+wild could be J-Q-K or Q-K-A. Both get the same declare/confirm
-  // treatment so the player's intent is explicit rather than guessed from
-  // click order.
-  const wlds=sel.filter(c=>c.wild);
-  const wLbl=c=>c.joker?'Joker':`Wild (${cLbl(c)})`;
-  const isSet=trySet(sel);
-  if(isSet){
-    // No positional ambiguity in a set (the rank is fixed = the set's rank),
-    // but a Joker still needs a concrete card declared so it can be
-    // redeemed later — a Deuce doesn't (Deuces are never redeemed; valMeld
-    // silently assigns it the set's rank for scoring purposes).
-    const jkrsInSet=sel.filter(c=>c.joker);
-    if(jkrsInSet.length){
-      const setRank=sel.find(c=>!c.wild).rank;
-      const usedSuits=new Set(sel.filter(c=>!c.wild).map(c=>c.suit));
-      document.getElementById('jdecl-inputs').innerHTML=jkrsInSet.map(j=>{
-        const suggestSuit=SUITS.find(s=>!usedSuits.has(s))||SUITS[0];
-        usedSuits.add(suggestSuit);
-        const suggested=setRank+suggestSuit;
-        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">Joker represents (for future redemption):</label><input type="text" id="jd${j.id}" placeholder="e.g. ${setRank}♠" value="${j.declaredAs||suggested}" style="margin-bottom:0;"></div>`;
-      }).join('');
-      document.getElementById('jdecl-area').style.display='block';
-    } else {
-      document.getElementById('jdecl-area').style.display='none';
+
+  // Work out every legal wild assignment up front, so the player taps rather
+  // than types. The default is whatever the card ORDER implies (tryRun's
+  // reading of their intent), so the common case is just "Confirm meld".
+  _wildOpts=wildAssignmentOptions(sel);
+  _wildOptIdx=0;
+  if(_wildOpts.length){
+    const rr=tryRun(sel);
+    if(rr&&rr.assignedRanks){
+      const want=rr.assignedRanks.filter(x=>x.card.wild)
+        .map(x=>x.card.id+':'+((Object.keys(RO).find(k=>RO[k]===x.rank)||'')+(rr.suit||''))).join('|');
+      const i=_wildOpts.findIndex(o=>o.assignments.map(a=>a.id+':'+a.decl).join('|')===want);
+      if(i>=0) _wildOptIdx=i;
     }
-  } else if(wlds.length){
-    const nat=sel.filter(c=>!c.wild);
-    const autoDecls={};
-    const ambiguous=new Set();
-    if(nat.length>=2&&new Set(nat.map(c=>c.suit)).size===1){
-      // It's a run — try to auto-determine each wild's position
-      const runResult=tryRun(sel);
-      if(runResult&&runResult.assignedRanks){
-        runResult.assignedRanks.forEach(({card,rank})=>{
-          if(!card.wild) return;
-          // Check if a different valid position exists by trying all possible runStarts
-          const natVals=nat.map(c=>RO[c.rank]).sort((a,b)=>a-b);
-          const minNat=natVals[0], wildCount=sel.filter(c=>c.wild).length;
-          let altRanks=new Set();
-          for(let s=minNat-wildCount; s<=minNat; s++){
-            const runEnd=s+sel.length-1;
-            if(s>=3&&runEnd<=14&&s!==rank){
-              // Another valid start exists — this position is ambiguous
-              const gap=rank-s;
-              if(gap>0) altRanks.add(rank-gap);
-            }
-          }
-          if(altRanks.size>0){
-            ambiguous.add(card.id); // multiple valid positions — ask player
-          } else {
-            const rankName=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);
-            autoDecls[card.id]=rankName+runResult.suit;
-          }
-        });
-      }
-    }
-    const needsInput=wlds.filter(j=>!autoDecls[j.id]||ambiguous.has(j.id));
-    if(needsInput.length){
-      document.getElementById('jdecl-inputs').innerHTML=needsInput.map(j=>{
-        const hint=ambiguous.has(j.id)?' (ambiguous — please specify)':'';
-        return`<div style="margin-bottom:4px;"><label style="font-size:12px;">${wLbl(j)} represents${hint}:</label><input type="text" id="jd${j.id}" placeholder="e.g. A♥ or 7♠" value="${autoDecls[j.id]||j.declaredAs||''}" style="margin-bottom:0;"></div>`;
-      }).join('');
-      document.getElementById('jdecl-area').style.display='block';
-    } else {
-      document.getElementById('jdecl-inputs').innerHTML=wlds.map(j=>`<input type="hidden" id="jd${j.id}" value="${autoDecls[j.id]}">`).join('');
-      document.getElementById('jdecl-area').style.display='none';
+    renderWildOptions();
+    if(_wildOpts.length===1){
       document.getElementById('meld-err').style.color='#2e7d32';
-      document.getElementById('meld-err').textContent=`Auto-declared: ${wlds.map(j=>`${wLbl(j)}=${autoDecls[j.id]}`).join(', ')}`;
+      document.getElementById('meld-err').textContent='Only one legal option — just confirm.';
     }
-    wlds.forEach(j=>{if(autoDecls[j.id]&&!ambiguous.has(j.id))j._pendingDecl=autoDecls[j.id];});
-  } else document.getElementById('jdecl-area').style.display='none';
+  } else {
+    document.getElementById('jdecl-area').style.display='none';
+  }
   document.getElementById('m-meld').style.display='flex';
 }
 
@@ -1699,6 +1798,7 @@ function cancelMeld(){
   // Clear any pending declarations set during openMeld preview
   const cp=G.players[G.currentIdx];
   cp.hand.forEach(c=>{if(c._pendingDecl)delete c._pendingDecl;});
+  _wildOpts=[];_wildOptIdx=0;
   cm('m-meld');
 }
 
@@ -1706,12 +1806,16 @@ function confirmMeld(){
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   document.getElementById('meld-err').style.color='#c0392b';
-  sel.filter(c=>c.wild).forEach(j=>{
-    const i=document.getElementById(`jd${j.id}`);
-    const typed=i?.value.trim();
-    if(typed||j._pendingDecl) j.declaredAs=normDecl(typed||j._pendingDecl)||j.declaredAs||null;
-    delete j._pendingDecl;
-  });
+  // Apply whichever wild assignment the player tapped (index 0 = the default
+  // implied by their card order, so usually they just hit Confirm).
+  const chosen=_wildOpts[_wildOptIdx];
+  if(chosen){
+    chosen.assignments.forEach(a=>{
+      const card=sel.find(c=>c.id===a.id);
+      if(card) card.declaredAs=a.decl;
+    });
+  }
+  sel.filter(c=>c.wild).forEach(j=>{delete j._pendingDecl;});
 
   if(G.mustMeldTopId!==null){
     if(!sel.some(c=>c.id===G.mustMeldTopId)){
@@ -1979,12 +2083,7 @@ function confirmRedeem(i){
   if(cp.handOrder) cp.handOrder.push(jokerToReturn.id);
   // Notify all players
   const redeemerLabel=cLbl(nat);
-  if(!G.jokerNotifications) G.jokerNotifications=[];
-  const seenBy=new Set([G.currentIdx]);
-  G.jokerNotifications.push({
-    msg:`${cp.name} redeemed a Joker using ${redeemerLabel}`,
-    seenBy, id:Date.now()
-  });
+  announceEvent(`${cp.name} redeemed a Joker using ${redeemerLabel}`);
   showJokerNotifyModal(`Joker (${jokerToReturn.declaredAs||'?'}) redeemed using ${redeemerLabel}.\nIt is now in your hand — meld it whenever you like (it keeps its declaration of ${jokerToReturn.declaredAs||'?'}, but you may redeclare it when you meld it).`);
   G.sel=[];cm('m-redeem');updateGame();
 }
@@ -2040,10 +2139,7 @@ function autoDecl(){
     const newCount=cp.hand.length-1;
     if(newCount>=1){
       cp.declaredCount=newCount;
-      if(!G.jokerNotifications) G.jokerNotifications=[];
-      const callMsg=`📣 ${cp.name} updated call to ${newCount} card${newCount!==1?'s':''}`;
-      G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
-      showJokerNotifyModal(callMsg);
+      announceEvent(`📣 ${cp.name} updated call to ${newCount} card${newCount!==1?'s':''}`);
     }
   }
 }
@@ -2088,9 +2184,8 @@ function confirmDecl(){
   // Queue notification for other players + show immediate modal
   if(!G.jokerNotifications) G.jokerNotifications=[];
   const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
-  G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
   cm('m-decl');updateDeclUI();
-  showJokerNotifyModal(callMsg);
+  announceEvent(callMsg);
 }
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;cp.calledThisTurn=false;updateDeclUI();}
 
@@ -2099,7 +2194,8 @@ function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
-  if(cp.type==='gambler'){
+  cpuLogReset();
+  if(isBagelChasing(cp)){
     gamblerDraw(cp);
     gamblerDiscard(cp);
   } else {
@@ -2111,6 +2207,7 @@ function runCPUInstant(){
 
 function runCPUTurn(){
   noteProgress();
+  cpuLogReset();
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   const speed=G.allCPUMode?Math.round(G.cpuSpeed/2):G.cpuSpeed;
@@ -2126,13 +2223,13 @@ function runCPUTurn(){
   setCPUAction(`🤖 ${cp.name} is drawing...`);
   setTimeout(()=>{
     if(!alive())return;
-    if(cp.type==='gambler') gamblerDraw(cp); else cpuDraw(cp);
+    if(isBagelChasing(cp)) gamblerDraw(cp); else cpuDraw(cp);
     updateGame();
     setCPUAction(`🤖 ${cp.name} is melding...`);
     setTimeout(()=>{
       if(!alive())return;
-      if(cp.type==='gambler'){
-        // Gambler melds only if going for bagel (handled in gamblerDiscard)
+      if(isBagelChasing(cp)){
+        // Bagel chaser melds only if going for the bagel (see gamblerDiscard)
         setCPUAction(`🤖 ${cp.name} is discarding...`);
         setTimeout(()=>{if(alive())gamblerDiscard(cp);},speed);
       } else {
@@ -2158,6 +2255,7 @@ function cpuMeldAsync(cp,speed,onDone){
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;
+      cpuLog(`melded ${cpuLogCards(meld)}`);
       const djk=meld.filter(c=>c.joker&&c.declaredAs);
       if(djk.length) addJokerNotification(cp.name,djk);
       updateGame();
@@ -2174,6 +2272,7 @@ function cpuMeldAsync(cp,speed,onDone){
       if(commitAddToMeld(em,[card])){
         cp.hand=cp.hand.filter(h=>h.id!==card.id);
         if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+        cpuLog(`added ${cLbl(card)} to a meld`);
         updateGame();
         setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
       }
@@ -2186,6 +2285,18 @@ function cpuMeldAsync(cp,speed,onDone){
 // The old cpuFindOneMeld returned the FIRST valid combination the enumerator
 // happened to produce, so melding choices were driven by the incidental order
 // of cards in hand rather than by value — a big reason CPU play looked weak.
+// Whether this CPU is currently playing the hold-everything-for-a-Bagel game.
+// Replaces the old hard-coded type==='gambler' split: it's now a consequence
+// of the persona's bagelAmbition, and it switches off once the CPU has bailed
+// or already melded (at which point a Bagel is impossible anyway).
+function isBagelChasing(cp){
+  const P=cp.persona;
+  if(!P) return false;
+  if(cp._bailedFromBagel) return false;
+  if(cp.hasEverMelded) return false;
+  return P.bagelAmbition>0.7;
+}
+
 function scoreMeld(cp,combo){
   const P=cp.persona||DEFAULT_PERSONA;
   let s=0;
@@ -2271,6 +2382,7 @@ function cpuDraw(cp){
     if(bestMeld && bestPts>20){
       // Execute pickup
       const pileCards=[...G.discardPile];
+      cpuLog(`picked up the discard pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
       G.discardPile=[];
       pileCards.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
@@ -2310,6 +2422,7 @@ function cpuDraw(cp){
   // Default: draw from deck
   if(G.drawPile.length===0){endHandDead();return;}
   const drawn=G.drawPile.pop();
+  cpuLog('drew from the deck');
   cp.hand.push(drawn);
   if(cp.handOrder) cp.handOrder.push(drawn.id);
   G.drewCard=true;G.phase='play';
@@ -2438,10 +2551,9 @@ function cpuDiscard(cp){
   if(shouldCall(cp)&&Math.random()<P.callDiscipline){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
     cp.calledThisTurn=true;cp.missedDeclaration=false;
-    if(!G.jokerNotifications) G.jokerNotifications=[];
     const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
-    G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
-    showJokerNotifyModal(callMsg);
+    cpuLog(`📣 called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`);
+    announceEvent(callMsg);
   }
   // Choose a discard by score rather than raw penalty size. Specials are
   // excluded unless going out, since the rules forbid discarding them.
@@ -2524,6 +2636,7 @@ function gamblerDraw(cp){
     if(bagelCard){
       // Pick up the pile — bagel is possible!
       const pile=[...G.discardPile];
+      cpuLog(`picked up the discard pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
       G.discardPile=[];
       pile.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pile.forEach(c=>cp.handOrder.push(c.id));
@@ -2535,6 +2648,7 @@ function gamblerDraw(cp){
   // Always draw from deck (don't pick up pile unless it enables bagel)
   if(G.drawPile.length===0){endHandDead();return;}
   const drawn=G.drawPile.pop();
+  cpuLog('drew from the deck');
   cp.hand.push(drawn);
   if(cp.handOrder) cp.handOrder.push(drawn.id);
   G.drewCard=true;G.phase='play';
@@ -2543,7 +2657,7 @@ function gamblerDraw(cp){
 function gamblerDiscard(cp){
   // Check if we should bail and play conservatively
   if(gamblerShouldBail(cp)){
-    cp.type='conservative'; // switch to conservative for rest of hand
+    cp._bailedFromBagel=true; // stop chasing; play normally for rest of hand
     cpuMeld(cp);
     cpuDiscard(cp);
     return;
@@ -2600,6 +2714,7 @@ function cpuDoDiscard(cp,card,goOut){
     cp.missedDeclaration=false;autoDecl();updateGame();cpuAfterDiscard();return;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
+  cpuLog(`discarded ${cLbl(card)}`);
   if(goOut){endHand(G.currentIdx);return;}
   autoDecl(); // correct a stale call if this CPU melded further than its earlier call anticipated
   if(shouldCall(cp))cp.missedDeclaration=true;
@@ -2991,7 +3106,7 @@ function restartHand(){
     p.checks=p.checks.filter(c=>c.hand!==handNum);
     p.bagels=p.bagels.filter(b=>b.hand!==handNum);
   });
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   cm('m-score');
   // Re-deal from saved deck, skip cut screen

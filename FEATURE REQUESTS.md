@@ -9,6 +9,25 @@ holding pen until we're ready to scope and build each one.
 ## Pending — scoped, ready to design/build next session
 
 ### 1. Streamline declaring Jokers and Deuces
+
+**SHIPPED (build 2026-08-08-6)** — replaced free-text entry with a computed
+tappable picker. `wildAssignmentOptions(sel)` enumerates every LEGAL
+assignment for the wild(s) in the current selection (all valid run positions,
+or all permissible suits for a set), automatically excluding anything that
+would put a wild on Q♠. The dialog shows those as tappable card chips with
+the option implied by the player's CARD ORDER preselected — so the common
+case is now just pressing "Confirm meld" with zero typing, and the player can
+never enter something illegal or misspelled. When only one legal option
+exists the dialog says so. Verified: Q♥K♥+deuce offers exactly J♥/A♥
+(defaulting to A♥); 10♠J♠+deuce offers only 9♠, never Q♠; J♠K♠+deuce
+correctly offers nothing; two-wild runs enumerate combined options
+(3♥+4♥ | 4♥+7♥ | 7♥+8♥). All 10 offered options across test cases commit as
+valid melds with no wild ever landing on Q♠.
+
+Remaining in this area: the ADD-to-existing-meld dialog still has no picker
+(it infers the wild's value), and `normDecl()` is now unused by the meld flow.
+
+#### Original notes
 Companion to the design-revisit note in `CONTEXT.md`'s Known Issues. The
 current flow accreted incrementally and now has inconsistent rules across
 contexts (silent auto-detect vs. ambiguous-prompt vs. suggested-default vs.

@@ -80,7 +80,9 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - `htouchStart` ignores touches on button elements
 - Action buttons only render for active human player zone (not CPU zones)
 - Piles in sidebar panel
-- Player types: 'human', 'conservative', 'gambler'
+- Player types: 'human' or 'cpu' — the old 'conservative'/'gambler' split is RETIRED. A CPU's behaviour comes entirely from its `persona` (see PERSONAS), chosen by name. Setup dropdown offers 👤 Human, 🎲 Random CPU, or any named character; personality is never labelled in the UI (discovered through play).
+- `isBagelChasing(cp)` replaces the old `type==='gambler'` branching — derived from `persona.bagelAmbition>0.7`, and switches off once the CPU melds or bails (`cp._bailedFromBagel`, reset each hand). Bailing no longer mutates `cp.type`.
+- `personaName` is stored on each player so a typed-in name like "Poppy" still resolves to Poppy's personality even without selecting the character explicitly.
 - `singleHumanMode` / `allCPUMode` in G control handoff/flow
 - `cpuTurnId` guard prevents stale async callbacks
 - `auditDeck()` — checks all card locations for duplicates/missing; in-game via Scores→Debug
