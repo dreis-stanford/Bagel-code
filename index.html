@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-1 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-3 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-1</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-3</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -545,6 +545,94 @@ function setPC(n){
   renderPlayerInputs(n);
 }
 
+// ── CPU PERSONALITIES ─────────────────────────────────────────────
+// Each CPU name maps to a hidden personality: a weight vector that scores
+// candidate actions, plus a memory profile and a "temperature" controlling
+// how reliably it picks its own best-scoring move.
+//
+// Traits (0..1 unless noted):
+//   meldEagerness  – dump melds early vs. hold cards back for something bigger
+//   bagelAmbition  – how long to hold out for the 250-point Bagel
+//   pileGreed      – willingness to take the discard pile
+//   riskAversion   – fear of being caught holding wilds/jokers/high cards
+//   blockAwareness – avoids feeding a player who has called
+//   callDiscipline – how reliably it calls when the rules require it
+//   temperature    – 0 = always plays its best move, higher = fuzzier judgment.
+//                    This is the main difficulty dial AND the main source of
+//                    natural variety: a weak player isn't scripted to blunder,
+//                    it just has less reliable judgement.
+//   memDepth       – how many recent discards it retains at all
+//   memRetention   – per-turn recall decay; recall odds ≈ retention^turnsAgo
+//   memCorruption  – chance a failed recall returns a WRONG but plausible card
+//                    rather than "don't know" (this is what reads as human)
+//
+// Deliberately NOT surfaced in the UI — players discover these through play.
+const PERSONAS={
+  // The Grinder — melds early and often, banks safe points, rarely gambles.
+  'Egg':{style:'grinder',meldEagerness:0.92,bagelAmbition:0.05,pileGreed:0.45,
+    riskAversion:0.70,blockAwareness:0.55,callDiscipline:0.95,
+    temperature:0.35,memDepth:14,memRetention:0.93,memCorruption:0.10},
+  // The Vulture — obsessed with the pile; hoards pairs waiting to pounce.
+  'Cinnamon-Raisin':{style:'vulture',meldEagerness:0.45,bagelAmbition:0.20,pileGreed:0.95,
+    riskAversion:0.40,blockAwareness:0.30,callDiscipline:0.80,
+    temperature:0.45,memDepth:24,memRetention:0.96,memCorruption:0.06},
+  // The Dreamer — chases Bagels well past when it's wise.
+  'Everything':{style:'dreamer',meldEagerness:0.10,bagelAmbition:0.95,pileGreed:0.55,
+    riskAversion:0.20,blockAwareness:0.25,callDiscipline:0.70,
+    temperature:0.55,memDepth:10,memRetention:0.88,memCorruption:0.15},
+  // The Hawk — plays the opponents more than the cards.
+  'Onion':{style:'hawk',meldEagerness:0.65,bagelAmbition:0.25,pileGreed:0.50,
+    riskAversion:0.60,blockAwareness:0.95,callDiscipline:0.90,
+    temperature:0.35,memDepth:18,memRetention:0.94,memCorruption:0.08},
+  // The Scatterbrain — decent instincts, unreliable execution.
+  'Pumpernickel':{style:'scatterbrain',meldEagerness:0.60,bagelAmbition:0.35,pileGreed:0.50,
+    riskAversion:0.45,blockAwareness:0.30,callDiscipline:0.55,
+    temperature:0.95,memDepth:5,memRetention:0.62,memCorruption:0.45},
+  // The Plodder — slow, safe, low variance. Good entry-level opponent.
+  'Plain':{style:'plodder',meldEagerness:0.80,bagelAmbition:0.05,pileGreed:0.25,
+    riskAversion:0.75,blockAwareness:0.25,callDiscipline:0.85,
+    temperature:0.75,memDepth:7,memRetention:0.78,memCorruption:0.25},
+  // The Shark — near-optimal, quietly wins. Unannounced.
+  'Poppy':{style:'shark',meldEagerness:0.75,bagelAmbition:0.45,pileGreed:0.70,
+    riskAversion:0.65,blockAwareness:0.90,callDiscipline:0.99,
+    temperature:0.12,memDepth:30,memRetention:0.98,memCorruption:0.03},
+  // The Improviser — unpredictable by design; hard to read.
+  'Garlic':{style:'improviser',meldEagerness:0.55,bagelAmbition:0.60,pileGreed:0.65,
+    riskAversion:0.35,blockAwareness:0.45,callDiscipline:0.75,
+    temperature:1.30,memDepth:12,memRetention:0.85,memCorruption:0.20},
+};
+const DEFAULT_PERSONA={style:'grinder',meldEagerness:0.75,bagelAmbition:0.25,pileGreed:0.50,
+  riskAversion:0.55,blockAwareness:0.50,callDiscipline:0.85,
+  temperature:0.50,memDepth:12,memRetention:0.90,memCorruption:0.15};
+
+// Personalities are tied to NAMES (so the family gets to know each character),
+// with a small per-game jitter so they're recognizable but not perfectly
+// predictable. Human players never get a persona.
+function personaFor(name){
+  const base=PERSONAS[name]||DEFAULT_PERSONA;
+  const p={...base};
+  const jitter=k=>{const v=p[k]+(Math.random()-0.5)*0.10;p[k]=Math.max(0,Math.min(1,v));};
+  ['meldEagerness','bagelAmbition','pileGreed','riskAversion','blockAwareness','callDiscipline'].forEach(jitter);
+  p.temperature=Math.max(0.05,p.temperature+(Math.random()-0.5)*0.15);
+  return p;
+}
+
+// Softmax-style choice: converts scores to weighted probabilities using the
+// persona's temperature. temp→0 always takes the best option; higher temps
+// increasingly entertain worse ones. Returns the chosen item.
+function pickByScore(items,scoreFn,temp){
+  if(!items||!items.length) return null;
+  const scored=items.map(it=>({it,s:scoreFn(it)}));
+  if(temp<=0.05) return scored.reduce((a,b)=>b.s>a.s?b:a).it;
+  const max=Math.max(...scored.map(x=>x.s));
+  // Normalize around the max for numerical stability, then exponentiate.
+  const weights=scored.map(x=>Math.exp((x.s-max)/(temp*10)));
+  const total=weights.reduce((a,b)=>a+b,0);
+  let r=Math.random()*total;
+  for(let i=0;i<scored.length;i++){r-=weights[i];if(r<=0)return scored[i].it;}
+  return scored[scored.length-1].it;
+}
+
 const CPU_NAMES={
   conservative:['Plain','Pumpernickel','Egg','Cinnamon-Raisin'],
   gambler:['Poppy','Everything','Garlic','Onion']
@@ -621,7 +709,7 @@ function startGame(){
   const allCPUMode=humanCount===0;
   G={
     playerCount:n,
-    players:names.map((name,i)=>({name,id:i,type:types[i],hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
+    players:names.map((name,i)=>({name,id:i,type:types[i],persona:(types[i]&&types[i]!=='human')?personaFor(name):null,memory:null,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,redeemMustMeld:false,drewCard:false,
     handFirstPlayer:1,swapFirst:null,reordering:false,
@@ -2022,6 +2110,7 @@ function runCPUInstant(){
 }
 
 function runCPUTurn(){
+  noteProgress();
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   const speed=G.allCPUMode?Math.round(G.cpuSpeed/2):G.cpuSpeed;
@@ -2061,10 +2150,11 @@ function cpuMeldAsync(cp,speed,onDone){
   if(G.players[G.currentIdx]!==cp){onDone();return;}
   const meld=cpuFindOneMeld(cp);
   if(meld){
-    const v=valMeld(meld);
-    if(v.valid){
-      if(v.type==='run'){const rr=tryRun(meld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-      pushMeld(cp,meld,v.type);
+    // commitNewMeld re-validates and is the ONLY thing that may push a meld.
+    // Critically, only strip the cards from hand if it actually succeeded —
+    // the old code removed them unconditionally, so a rejected meld silently
+    // destroyed cards (deck audit would then report cards missing).
+    if(commitNewMeld(cp,meld)){
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;
@@ -2072,6 +2162,11 @@ function cpuMeldAsync(cp,speed,onDone){
       if(djk.length) addJokerNotification(cp.name,djk);
       updateGame();
       setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
+    } else {
+      // cpuFindOneMeld proposed something commitNewMeld won't accept. Do NOT
+      // retry the same search (it would return the same combo forever and
+      // hang the turn) — fall through to the add-to-existing pass instead.
+      console.warn('cpuMeldAsync: proposed meld rejected on commit',meld.map(c=>cLbl(c)));
     }
   }
   for(const em of cp.melds){
@@ -2087,12 +2182,50 @@ function cpuMeldAsync(cp,speed,onDone){
   onDone();
 }
 
+// Scores how good a candidate meld is for this CPU. Higher = more attractive.
+// The old cpuFindOneMeld returned the FIRST valid combination the enumerator
+// happened to produce, so melding choices were driven by the incidental order
+// of cards in hand rather than by value — a big reason CPU play looked weak.
+function scoreMeld(cp,combo){
+  const P=cp.persona||DEFAULT_PERSONA;
+  let s=0;
+  // Raw table value of the cards being laid down.
+  s+=combo.reduce((a,c)=>a+cPts(c,false),0);
+  // Laying down wilds is powerful but spends a flexible card; risk-averse
+  // personas value getting them safely onto the table, gamblers hoard them.
+  const wilds=combo.filter(c=>c.wild).length;
+  if(wilds) s+=wilds*(P.riskAversion*30-20);
+  // Jokers are worth a lot on the table (+100) but are the worst thing to be
+  // caught holding (-200), so risk aversion pushes hard toward melding them.
+  const jokers=combo.filter(c=>c.joker).length;
+  if(jokers) s+=jokers*(P.riskAversion*60);
+  // Bagel chasers resist melding at all — every meld forfeits the 250.
+  s-=P.bagelAmbition*70;
+  // Eager melders get a flat nudge toward putting cards down now.
+  s+=P.meldEagerness*25;
+  // Prefer bigger melds slightly (clears more hand, more points).
+  s+=combo.length*3;
+  return s;
+}
+
 function cpuFindOneMeld(cp){
+  const P=cp.persona||DEFAULT_PERSONA;
+  // Gather ALL valid candidates rather than stopping at the first one.
+  const cands=[];
   for(let size=4;size>=3;size--){
-    const combos=combinations(cp.hand,size);
-    for(const combo of combos)if(valMeld(combo).valid)return combo;
+    for(const combo of combinations(cp.hand,size)){
+      if(valMeld(combo).valid) cands.push(combo);
+    }
   }
-  return null;
+  if(!cands.length) return null;
+  // A bagel chaser with a nearly-complete hand should hold everything back.
+  if(P.bagelAmbition>0.7&&cp.hand.length>=8&&!cp.hasEverMelded){
+    if(Math.random()<P.bagelAmbition) return null;
+  }
+  const best=pickByScore(cands,c=>scoreMeld(cp,c),P.temperature);
+  // Only decline a positive-value meld if this persona is genuinely holding out.
+  if(best&&scoreMeld(cp,best)<0&&Math.random()<P.bagelAmbition) return null;
+  return best;
 }
 
 function setCPUAction(msg){
@@ -2242,14 +2375,67 @@ function combinations(arr,k){
   return [...withFirst,...withoutFirst];
 }
 
+// How useful is this card to the CPU's own hand? Counts near-melds: cards
+// sharing a rank (toward a set) or adjacent/same-suit (toward a run). The old
+// discard logic had no concept of this at all — it just shed the biggest
+// number, happily throwing away a card that nearly completed a run.
+function cardUsefulness(cp,card){
+  if(card.wild) return 40;              // wilds are always flexible
+  let u=0;
+  for(const o of cp.hand){
+    if(o.id===card.id) continue;
+    if(o.wild) continue;
+    if(o.rank===card.rank) u+=12;       // pair toward a set
+    if(o.suit===card.suit){
+      const d=Math.abs((RO[o.rank]||0)-(RO[card.rank]||0));
+      if(d===1) u+=10;                  // adjacent — toward a run
+      else if(d===2) u+=5;              // one gap — a wild could bridge it
+    }
+  }
+  // Cards that extend one of our own existing melds are very useful.
+  for(const m of cp.melds){ if(valMeld([...m.cards,card]).valid) u+=25; }
+  return u;
+}
+
+// Would discarding this card likely help an opponent? Approximated from what
+// is visible on the table plus who has called.
+function discardDanger(cp,card){
+  let d=0;
+  for(const p of G.players){
+    if(p===cp) continue;
+    // Feeding a player who has called is the classic blunder.
+    const called=p.declared?2.2:1;
+    for(const m of p.melds){
+      if(valMeld([...m.cards,card]).valid) d+=18*called;
+    }
+    if(p.declared) d+=4; // generic caution near anyone about to go out
+  }
+  return d;
+}
+
+function scoreDiscard(cp,card){
+  const P=cp.persona||DEFAULT_PERSONA;
+  // Base: shedding penalty points is good (cPts is negative for in-hand).
+  let s=Math.abs(cPts(card,true))*P.riskAversion;
+  // But keep cards that are doing work for us.
+  s-=cardUsefulness(cp,card)*(1.0+(1-P.riskAversion)*0.5);
+  // And avoid handing opponents what they need.
+  s-=discardDanger(cp,card)*P.blockAwareness;
+  // Wilds/jokers are painful to hold but far too useful to toss early.
+  if(card.wild) s-=60*(1-P.riskAversion)+20;
+  return s;
+}
+
 function cpuDiscard(cp){
   // Correct a stale call BEFORE checking whether a (possibly different) call
   // is needed now — shouldCall() short-circuits to false once cp.declared is
   // true, so without this a CPU that melded down further after calling would
   // keep displaying its old, now-too-high, call count forever.
   autoDecl();
-  // Declare if needed
-  if(shouldCall(cp)){
+  // Declare if needed — but callDiscipline means a sloppier persona sometimes
+  // genuinely forgets, and then eats the real rules penalty for it.
+  const P=cp.persona||DEFAULT_PERSONA;
+  if(shouldCall(cp)&&Math.random()<P.callDiscipline){
     cp.declared=true;cp.declaredCount=cp.hand.length-1;
     cp.calledThisTurn=true;cp.missedDeclaration=false;
     if(!G.jokerNotifications) G.jokerNotifications=[];
@@ -2257,15 +2443,13 @@ function cpuDiscard(cp){
     G.jokerNotifications.push({msg:callMsg, seenBy:new Set([G.currentIdx]), id:Date.now()});
     showJokerNotifyModal(callMsg);
   }
-  // Pick highest penalty card to discard (most negative if stuck in hand)
-  // Prefer to keep naturals useful for melds; discard wilds last (high penalty but useful)
-  const sorted=[...cp.hand].sort((a,b)=>{
-    // Discard highest-value card we can (special cards can only be discarded going out)
-    if(isSp(a)&&!isSp(b)) return 1;  // keep specials
-    if(!isSp(a)&&isSp(b)) return -1;
-    return Math.abs(cPts(b,true))-Math.abs(cPts(a,true)); // highest penalty first
-  });
-  const toDiscard=sorted[0];
+  // Choose a discard by score rather than raw penalty size. Specials are
+  // excluded unless going out, since the rules forbid discarding them.
+  const goOutNow=cp.hand.length<=1;
+  const legal=cp.hand.filter(c=>!isSp(c)||goOutNow);
+  const pool=legal.length?legal:[...cp.hand];
+  const sorted=[...pool].sort((a,b)=>scoreDiscard(cp,b)-scoreDiscard(cp,a));
+  const toDiscard=pickByScore(pool,c=>scoreDiscard(cp,c),P.temperature)||sorted[0];
   if(!toDiscard){endHand(G.currentIdx);return;}
 
   const goOut=cp.hand.length<=1;
@@ -2436,7 +2620,53 @@ function cpuAfterDiscard(){
   }
 }
 
+// ── CPU stall watchdog ────────────────────────────────────────────
+// A CPU turn is driven entirely by chained setTimeout callbacks guarded by
+// alive(). If any link in that chain is dropped (a guard fails at the wrong
+// moment, an exception escapes a callback, or the Continue ▶ button fails to
+// render while awaitingCPUAck is set), nothing else will ever advance the
+// turn and the game freezes with no way forward. Rather than leave that as a
+// dead end, note progress on every turn transition and, if a CPU turn makes
+// no progress for a while, capture diagnostics and force the game onward.
+function noteProgress(){ G.lastProgressTs=Date.now(); }
+
+function cpuWatchdogTick(){
+  try{
+    if(!G||!G.players||!G.players.length) return;
+    if(G.phase==='cut'||G.phase==='over') return;
+    const cp=G.players[G.currentIdx];
+    if(!cp||!cp.type||cp.type==='human') return;      // human turns may idle forever
+    if(!G.lastProgressTs){ noteProgress(); return; }
+    const idle=Date.now()-G.lastProgressTs;
+    const limit=Math.max(9000,(G.cpuSpeed||800)*8);   // generous vs. normal pacing
+    if(idle<limit) return;
+
+    // If we're legitimately waiting on the human to press Continue, only
+    // intervene when that button isn't actually on screen to be pressed.
+    if(G.awaitingCPUAck){
+      if(document.querySelector('button[onclick="ackCPUDiscard()"]')){ noteProgress(); return; }
+      G.stallLog=(G.stallLog||[]);
+      G.stallLog.push({at:new Date().toISOString(),kind:'awaitingCPUAck-no-button',player:cp.name,phase:G.phase,idleMs:idle});
+      console.warn('CPU watchdog: awaiting ack but no Continue button rendered — auto-advancing.');
+      ackCPUDiscard();
+      return;
+    }
+
+    G.stallLog=(G.stallLog||[]);
+    G.stallLog.push({at:new Date().toISOString(),kind:'cpu-turn-stalled',player:cp.name,type:cp.type,
+      phase:G.phase,idleMs:idle,hand:cp.hand.length,drew:!!G.drewCard,cpuTurnId:G.cpuTurnId});
+    console.warn('CPU watchdog: CPU turn stalled — restarting it.',G.stallLog[G.stallLog.length-1]);
+    noteProgress();
+    // First try re-driving the same turn; if it was already mid-discard the
+    // turn will simply complete. cpuTurnId increments, invalidating any
+    // stale callback that might still fire later.
+    runCPUTurn();
+  }catch(e){ console.warn('CPU watchdog error',e); }
+}
+if(typeof window!=='undefined') setInterval(cpuWatchdogTick,2000);
+
 function ackCPUDiscard(){
+  noteProgress();
   G.awaitingCPUAck=false;
   clearCPUAction();
   endTurnHO();
@@ -2445,6 +2675,7 @@ function ackCPUDiscard(){
 // ─────────────────────────────────────────────────────────────────
 
 function endTurnHO(){
+  noteProgress();
   G.awaitingCPUAck=false;
   const cp=G.players[G.currentIdx];
   cp.turnCount++;
@@ -2624,6 +2855,8 @@ function buildGameContext(){
     `Scores: ${G.players.map(p=>`${p.name}=${p.points}pts ${p.money>=0?'+':''}${p.money.toFixed(1)}¢`).join(' | ')}`,
     `Mode: ${G.singleHumanMode?'1 human + CPU':G.allCPUMode?'all CPU':'all human'}`,
     `Deck audit: ${(()=>{const r=auditDeck();return`${r.total}/106 cards, deck0=${r.deck0}/53, deck1=${r.deck1}/53`+(r.dups.length?`, DUPS:${r.dups.map(([id,locs])=>`id${id}@${locs.join(',')}`).join(' ')}`:', no dups')+(r.missing.length?`, MISSING:${r.missing.join(',')}`:'');})()}`,
+    ...(G.stallLog&&G.stallLog.length?[``,`Stall events (${G.stallLog.length}) — watchdog had to recover a frozen CPU turn:`,
+      ...G.stallLog.slice(-5).map(e=>`  ${e.kind} | ${e.player||'?'}${e.type?'('+e.type+')':''} phase=${e.phase} idle=${e.idleMs}ms${e.hand!==undefined?' hand='+e.hand:''}${e.drew!==undefined?' drew='+e.drew:''}`)]:[]),
     `================================`,
   ];
   return lines.join('\n');

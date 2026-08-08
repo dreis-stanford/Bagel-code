@@ -40,6 +40,41 @@ Passover. Pieces to design/build:
 on deck scope before implementation.*
 
 ### 3. Refine CPU strategy realism + add more CPU player types
+
+**STAGE 1 SHIPPED (build 2026-08-08-3)** — scoring/selection framework +
+personalities. Still TODO: **Stage 2, the memory model** (`memDepth`,
+`memRetention`, `memCorruption` traits are defined on each persona but NOT
+yet consulted — CPUs currently read game state directly). Also still TODO:
+personality-aware pile-pickup (`pileGreed` is defined but `cpuDraw` still
+uses the old greedy logic) and gambler-path unification.
+
+Architecture built:
+- `PERSONAS` — eight named archetypes, each a weight vector. Tied to NAMES so
+  the family gets to know the characters, with ±5% per-game jitter so they're
+  recognizable but not perfectly predictable. Deliberately NOT surfaced in
+  the UI — discovered through play.
+  Egg=Grinder, Cinnamon-Raisin=Vulture, Everything=Dreamer, Onion=Hawk,
+  Pumpernickel=Scatterbrain, Plain=Plodder, Poppy=Shark, Garlic=Improviser.
+  ("Goldie" is reserved for HUMAN players and triggers the easter egg — it is
+  not a CPU persona.)
+- `pickByScore(items,scoreFn,temp)` — softmax selection. `temperature` is the
+  difficulty dial AND the variety source: a weak player isn't scripted to
+  blunder, it just has fuzzier judgement. Verified response: temp 0.12→0%
+  suboptimal, 0.95→17%, 1.30→25%.
+- `scoreMeld` / `scoreDiscard` replace the old first-match and
+  highest-penalty-wins logic.
+- `cardUsefulness` — near-meld detection (pairs, adjacent suits, gap-bridging,
+  extends-own-meld) so CPUs stop discarding cards that nearly complete a run.
+- `discardDanger` — weighs whether a discard feeds an opponent, doubled for
+  players who have called.
+- `callDiscipline` — low-discipline personas genuinely forget to call and eat
+  the real rules penalty, which reads far more human than a random bad move.
+
+Measured differentiation (1000 trials, choice between a 14.5-pt and 29.5-pt
+meld): Shark 100% optimal, Grinder/Hawk 99%, Plodder 89%, Scatterbrain 84%,
+Improviser 77% (+14% declines), Dreamer declines 96% hoarding for a Bagel.
+
+#### Original notes
 Currently only two CPU archetypes exist: Conservative (melds greedily, smart
 pile pickup, discards highest penalty) and Gambler (holds for bagel, bails
 under specific conditions). Two threads here:

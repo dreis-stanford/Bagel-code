@@ -111,6 +111,38 @@ after the fact from a static snapshot.
 
 ---
 
+## OPEN — CPU turn froze (reported, no repro steps)
+
+**Reported:** during a hand, "everything got stuck on a computer player's
+turn that it didn't take." Circumstances not captured.
+
+**Mitigation shipped (build 2026-08-08-2), root cause NOT yet confirmed:**
+a watchdog (`cpuWatchdogTick`, 2s interval) now detects a CPU turn making no
+progress and recovers it, so a freeze no longer ends the hand. It also
+records what it saw into `G.stallLog`, which is now included in the Feedback
+report. **Next time this happens, hit Feedback — the report will name the
+stall kind, the player, the phase, and how long it hung.** That should
+identify the cause without needing repro steps.
+
+Two candidate causes were found by inspection:
+1. `awaitingCPUAck` set to true while the Continue ▶ button doesn't render
+   (it requires `isActive && isCPU && G.awaitingCPUAck` simultaneously) — the
+   game would then wait forever for a button nobody can press. Watchdog
+   handles this specifically by checking whether the button is in the DOM.
+2. A dropped link in the chained `setTimeout`/`alive()` callbacks that drive
+   a CPU turn — any escaped exception or mistimed guard leaves nothing to
+   advance the turn. Watchdog re-drives `runCPUTurn()`.
+
+Also fixed alongside (definite bug, may or may not relate to the freeze):
+**`cpuMeldAsync` removed melded cards from the CPU's hand even when
+`pushMeld` had rejected the meld** — silently destroying cards (deck audit
+would report them missing). Worse, `cpuFindOneMeld` would keep proposing the
+same rejected combo, so the retry loop could spin. Now cards are only removed
+on a successful `commitNewMeld`, and a rejected proposal falls through to the
+add-to-existing pass instead of retrying.
+
+---
+
 ## Resolved — rules-compliance audit (2026-08-08)
 
 Systematic pass comparing `index.html` against `RULES.md`. Found and fixed:
