@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-6 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-9 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-6</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-9</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -643,9 +643,31 @@ let _usedCPUNames=[];
 
 // Picks an unused CPU name at random (used for the "Random CPU" option and
 // for auto-naming). Avoids duplicates within a single setup.
-function pickCPUName(){
-  const available=CPU_NAME_LIST.filter(n=>!_usedCPUNames.includes(n));
-  if(!available.length){_usedCPUNames=[];return CPU_NAME_LIST[0];}
+// Every character name currently claimed by a setup slot — both typed names
+// and explicitly-selected characters. Reading the live inputs makes this
+// self-correcting: the old version only tracked names it had generated
+// itself, so explicitly choosing "Poppy" left Poppy looking unclaimed and a
+// later "Random CPU" could hand out a SECOND Poppy.
+function namesInUse(){
+  const n=(typeof G!=='undefined'&&G&&G.playerCount)||5;
+  const out=[];
+  for(let i=0;i<n;i++){
+    const nameEl=document.getElementById('pn'+i);
+    if(nameEl&&nameEl.value) out.push(nameEl.value.trim());
+    const selEl=document.getElementById('pt'+i);
+    if(selEl&&typeof selEl.value==='string'&&selEl.value.startsWith('cpu:')){
+      const want=selEl.value.slice(4);
+      if(want&&want!=='random') out.push(want);
+    }
+  }
+  return out;
+}
+
+function pickCPUName(exclude){
+  const taken=[...namesInUse(),...(exclude||[]),..._usedCPUNames];
+  let available=CPU_NAME_LIST.filter(n=>!taken.includes(n));
+  if(!available.length) available=CPU_NAME_LIST.filter(n=>!(exclude||[]).includes(n));
+  if(!available.length) available=CPU_NAME_LIST;
   const name=available[Math.floor(Math.random()*available.length)];
   _usedCPUNames.push(name);
   return name;
@@ -679,11 +701,23 @@ function onTypeChange(idx){
     const nameEl=document.getElementById(`pn${idx}`);
     const currentName=nameEl?.value||'';
     const isDefaultName=/^Player \d+$/.test(currentName)||CPU_NAME_LIST.includes(currentName);
-    if(isCPUSel(sel)&&isDefaultName&&nameEl){
+    if(isCPUSel(sel)&&nameEl){
       const want=sel.slice(4); // strip 'cpu:'
-      // A specific character keeps its own name (that's how the persona is
-      // identified); 'random' draws an unused one.
-      nameEl.value=(want==='random')?pickCPUName():want;
+      // Two CPUs may never be the same character — they'd share a persona as
+      // well as a name. If this character is already taken by another slot,
+      // bounce that slot back to Random so the duplicate can't be created.
+      if(want&&want!=='random'){
+        for(let j=0;j<n;j++){
+          if(j===idx) continue;
+          const other=document.getElementById(`pt${j}`);
+          if(other&&other.value===`cpu:${want}`){
+            other.value='cpu:random';
+            const otherName=document.getElementById(`pn${j}`);
+            if(otherName) otherName.value=pickCPUName([want]);
+          }
+        }
+      }
+      if(isDefaultName) nameEl.value=(want==='random')?pickCPUName():want;
     } else if(sel==='human'&&isDefaultName&&nameEl){
       nameEl.value=`Player ${idx+1}`;
     }
@@ -721,13 +755,23 @@ function startGame(){
   // typed-in name (so a hand-typed "Poppy" still gets Poppy's personality),
   // and finally to a random character.
   const types=sels.map(v=>v==='human'?'human':'cpu');
+  // Resolve each CPU's persona, making sure two players never end up as the
+  // same character (which previously produced two "Poppy"s in one game).
+  const claimed=[];
   const personaNames=sels.map((v,i)=>{
     if(v==='human') return null;
     const want=v.slice(4);
-    if(want&&want!=='random'&&PERSONAS[want]) return want;
-    if(PERSONAS[names[i]]) return names[i];
-    return pickCPUName();
+    let chosen=null;
+    if(want&&want!=='random'&&PERSONAS[want]) chosen=want;
+    else if(PERSONAS[names[i]]) chosen=names[i];
+    if(chosen&&claimed.includes(chosen)) chosen=null; // duplicate — reroll
+    if(!chosen) chosen=pickCPUName(claimed);
+    claimed.push(chosen);
+    return chosen;
   });
+  // Keep displayed names in step with the resolved characters so the table
+  // never shows two players with the same name.
+  personaNames.forEach((pn,i)=>{ if(pn&&claimed.filter(c=>c===pn).length===1) names[i]=pn; });
   G={
     playerCount:n,
     players:names.map((name,i)=>({name,id:i,type:types[i],persona:personaNames[i]?personaFor(personaNames[i]):null,personaName:personaNames[i]||null,memory:null,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
@@ -848,9 +892,11 @@ function updateCutSlider(val){
   const abovePct=Math.round(above/deck.length*100);
   document.getElementById('cut-above-lbl').textContent=`Top part (lifted): ~${abovePct}%`;
   document.getElementById('cut-below-lbl').textContent=`Bottom part (dealt): ~${100-abovePct}%`;
-  // Perfect cut: bottom part has exactly 13×N+1 cards
-  const isExact=below===exact;
-  document.getElementById('cut-exact-badge').style.display=isExact&&G.optPC?'block':'none';
+  // Perfect cut is deliberately NOT revealed while the slider moves — showing
+  // it live let a player simply hunt for the exact position and collect the
+  // Check for free, which defeats the point of the bonus. The result is only
+  // disclosed after the cut is committed (see confirmCut).
+  document.getElementById('cut-exact-badge').style.display='none';
 }
 
 function confirmCut(){
@@ -1108,14 +1154,10 @@ function renderAllPlayers(){
 
   // Ensure hand order for active player
   if(!cp.handOrder){
-    cp.handOrder=[...cp.hand].sort((a,b)=>{
-      if(a.joker!==b.joker)return a.joker?-1:1;
-      if(a.wild!==b.wild)return a.wild?-1:1;
-      if(a.qs!==b.qs)return a.qs?-1:1;
-      const so=['♠','♥','♦','♣'];
-      if(a.suit!==b.suit)return so.indexOf(a.suit)-so.indexOf(b.suit);
-      return(RO[b.rank]||0)-(RO[a.rank]||0);
-    }).map(c=>c.id);
+    // Opening arrangement: group probable melds so the player can see what
+    // they've got at a glance, instead of a raw suit/rank sort. Purely a
+    // starting point — they can drag freely from here, or hit Reset order.
+    cp.handOrder=smartHandOrder(cp.hand);
   }
   const handIds=new Set(cp.hand.map(c=>c.id));
   cp.handOrder=cp.handOrder.filter(id=>handIds.has(id));
@@ -1144,6 +1186,24 @@ function renderAllPlayers(){
       const isCPUActive=isCPU;
       if(isCPUActive&&!G.optShowCPU){
         handHtml=cp.hand.map(c=>rcBack(c.deck)).join('');
+      } else if(isCPUActive){
+        // Show CPU cards is ON: reveal the hand face-up but READ-ONLY. It
+        // previously fell through to the interactive branch, so you could
+        // select and drag-reorder a bot's hand, which makes no sense and
+        // could desync its handOrder mid-turn.
+        handHtml=`<div style="font-size:11px;color:#aaa;margin-bottom:4px;">${cp.name}'s hand (revealed)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;width:100%;">
+        ${cp.hand.map(c=>{
+          let cls=`card-el ${cCol(c)}`;
+          if(c.joker||c.wild)cls+=' special-wild';
+          if(c.qs)cls+=' special-qs';
+          return`<div class="${cls}" style="width:46px;height:68px;opacity:0.92;cursor:default;">
+            <div style="font-size:15px;font-weight:700;">${c.joker?'★':c.rank}</div>
+            <div style="font-size:14px;">${c.suit}</div>
+            <div style="position:absolute;top:2px;right:2px;width:5px;height:5px;border-radius:50%;background:${c.deck===0?'#c0392b':'#2980b9'};opacity:0.4;"></div>
+          </div>`;
+        }).join('')}
+        </div>`;
       } else {
         const ordered=cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
         handHtml=`<div style="font-size:11px;color:#aaa;margin-bottom:4px;">Tap to select · Hold &amp; drag to reorder · <button onclick="resetHandOrder()" style="font-size:11px;color:#aaa;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;">Reset order</button></div>
@@ -1247,6 +1307,67 @@ function renderAllPlayers(){
   // Restore button states from current G.sel/G.phase after every re-render
   updateBtns();
   updateDeclUI();
+}
+
+// ── Hand arrangement ──────────────────────────────────────────────
+// How related are two cards? Used both to group a fresh hand and to slot
+// newly-acquired cards (pile pickups, draws) next to where they belong,
+// rather than dumping them at the end.
+function cardAffinity(a,b){
+  if(!a||!b) return 0;
+  if(a.wild||b.wild) return 0;              // wilds are kept together separately
+  if(a.rank===b.rank) return 100;           // toward a set
+  if(a.suit===b.suit){
+    const d=Math.abs((RO[a.rank]||0)-(RO[b.rank]||0));
+    if(d===1) return 85;                    // adjacent — toward a run
+    if(d===2) return 65;                    // one gap a wild could bridge
+    return 35;                              // same suit, loosely related
+  }
+  return 0;
+}
+
+// Produces a sensible opening arrangement: probable melds grouped together
+// first (runs in ascending order, sets side by side), then the remaining
+// cards tidied by suit and rank, with wilds parked at the end as reserves.
+// The player is free to drag from here — this is only a starting point.
+function smartHandOrder(hand){
+  const wilds=hand.filter(c=>c.wild);
+  const nat=hand.filter(c=>!c.wild);
+  const used=new Set();
+  const groups=[];
+
+  // Sets first: same rank, 2+ copies.
+  const byRank={};
+  nat.forEach(c=>{(byRank[c.rank]=byRank[c.rank]||[]).push(c);});
+  Object.values(byRank).filter(g=>g.length>=2)
+    .sort((a,b)=>b.length-a.length||(RO[b[0].rank]||0)-(RO[a[0].rank]||0))
+    .forEach(g=>{ if(g.some(c=>used.has(c.id))) return;
+      g.forEach(c=>used.add(c.id)); groups.push(g); });
+
+  // Then runs: same suit, consecutive ranks, 2+ long.
+  const bySuit={};
+  nat.filter(c=>!used.has(c.id)).forEach(c=>{(bySuit[c.suit]=bySuit[c.suit]||[]).push(c);});
+  Object.values(bySuit).forEach(cards=>{
+    const sorted=[...cards].sort((a,b)=>(RO[a.rank]||0)-(RO[b.rank]||0));
+    let run=[];
+    const flush=()=>{ if(run.length>=2){run.forEach(c=>used.add(c.id));groups.push([...run]);} run=[]; };
+    sorted.forEach(c=>{
+      if(!run.length){run=[c];return;}
+      const prev=run[run.length-1];
+      if((RO[c.rank]||0)-(RO[prev.rank]||0)===1) run.push(c); else {flush();run=[c];}
+    });
+    flush();
+  });
+
+  // Longest/most promising groups first so the eye lands on them.
+  groups.sort((a,b)=>b.length-a.length);
+
+  // Leftover singles, tidied by suit then rank.
+  const so=['♠','♥','♦','♣'];
+  const singles=nat.filter(c=>!used.has(c.id)).sort((a,b)=>
+    (so.indexOf(a.suit)-so.indexOf(b.suit))||((RO[b.rank]||0)-(RO[a.rank]||0)));
+
+  return [...groups.flat(),...singles,...wilds].map(c=>c.id);
 }
 
 function resetHandOrder(){const cp=G.players[G.currentIdx];cp.handOrder=null;renderAllPlayers();}
@@ -1529,7 +1650,14 @@ function startPickup(){
   const cp=G.players[G.currentIdx];
   const top=G.discardPile[G.discardPile.length-1];
   // Naturals = non-wild cards in hand PLUS natural cards already melded on the table
-  const naturalsInHand=cp.hand.filter(c=>!c.wild);
+  // List hand naturals in the player's OWN arranged order, not the raw
+  // cp.hand array (which is deal/draw order). Seeing them in a different
+  // order from your actual hand makes the picker needlessly confusing.
+  const orderedHand=(cp.handOrder&&cp.handOrder.length)
+    ? cp.handOrder.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean)
+    : [...cp.hand];
+  cp.hand.forEach(c=>{if(!orderedHand.includes(c))orderedHand.push(c);});
+  const naturalsInHand=orderedHand.filter(c=>!c.wild);
   // Only include table naturals from melds that could accept the top card
   const naturalsOnTable=[];
   cp.melds.forEach((m,mi)=>{
@@ -1588,7 +1716,7 @@ function renderPickup(){
         ${rc(PU.topCard)} <span style="color:#666;font-size:13px;">+</span> ${selNatCards.map(c=>rc(c)).join('')}
         <span style="font-size:12px;color:#666;align-self:center;">(you can add more when melding)</span>
       </div>
-      ${fromTable.length?`<div style="font-size:12px;color:#666;margin-bottom:0.75rem;">Note: ${fromTable.map(c=>cLbl(c)).join(', ')} from your table melds count toward the 2-natural requirement.</div>`:''}
+      ${fromTable.length?`<div style="font-size:12px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 10px;margin-bottom:0.75rem;">${cLbl(PU.topCard)} will be <strong>added to your existing meld</strong> containing ${fromTable.map(c=>cLbl(c)).join(', ')} — not played as a new meld.</div>`:''}
       <button class="btn primary" style="width:100%;margin-bottom:8px;" onclick="confirmPickup()">Pick up the pile</button>
       <button class="btn" style="width:100%" onclick="PU.step=1;renderPickup();">← Back</button>`;
   }

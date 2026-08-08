@@ -143,6 +143,67 @@ add-to-existing pass instead of retrying.
 
 ---
 
+## Resolved — hand arrangement & pile-pickup ordering (2026-08-08-9)
+
+- **Pile pickup listed your naturals in the wrong order** — `startPickup()`
+  built its list from the raw `cp.hand` array (deal/draw order) rather than
+  `cp.handOrder`, so the cards you were choosing from appeared in a different
+  order than they sit in your actual hand. Now ordered to match, with any
+  stragglers appended.
+- **Opening hand is now pre-arranged** — `smartHandOrder()` groups probable
+  melds (sets first, then runs in ascending order), tidies the remaining
+  singles by suit and rank, and parks wilds at the end as reserves. Replaces
+  the old flat wilds→suit→rank sort. Purely a starting point; drag and
+  "Reset order" still work. Example: dealt `9♠ 4♥ 2♦ K♦ 9♥ 6♠ 4♣ J♦ ★JK 7♠
+  9♦ 4♦ Q♦` → arranged `9♠ 9♥ 9♦ | 4♥ 4♣ 4♦ | J♦ Q♦ K♦ | 6♠ 7♠ | 2♦ ★JK`.
+- **Clarified that pile pickup CAN extend an existing meld** — it always
+  could (naturals from your table melds are offered alongside hand cards),
+  but the confirmation step only mentioned it in small grey print. Step 2 now
+  states plainly that the top card will be added to the existing meld rather
+  than played as a new one.
+- Picked-up cards continue to append at the end of the hand, by preference —
+  easy to spot. (An affinity-based auto-insert was built and then removed as
+  unwanted.)
+
+---
+
+## Resolved — duplicate character selection & CPU hand interaction (2026-08-08-8)
+
+- **Same character selectable in two slots** — follow-up to the 2026-08-08-7
+  fix, which stopped RANDOM picks colliding but still let the user manually
+  choose e.g. Poppy in two dropdowns. `onTypeChange` now bounces any other
+  slot already holding that character back to "Random CPU" and renames it, so
+  a duplicate can't be created at all. (Two same-named CPUs also shared a
+  persona, so a table could unknowingly contain two Sharks.)
+- **Revealed CPU hands were fully interactive** — with "Show CPU cards" on,
+  an active CPU's hand fell through to the human branch, so it rendered with
+  drag/drop handlers, tap-to-select, and a "Hold & drag to reorder" hint. You
+  could reorder a bot's hand mid-turn, which is meaningless and risked
+  desyncing its `handOrder` against `hand`. CPU hands now render face-up but
+  strictly read-only, labelled "<name>'s hand (revealed)". Human hands remain
+  fully interactive.
+
+---
+
+## Resolved — cut reveal & duplicate CPU names (2026-08-08-7)
+
+- **Perfect cut revealed before committing** — `updateCutSlider()` lit the
+  "✓ Exact cut!" badge live as the slider moved, so a player could simply
+  hunt for the exact position and collect the Check for free, defeating the
+  bonus entirely. The badge no longer appears during adjustment; the result
+  is disclosed only after `confirmCut()`, which already announced it.
+- **Two players could be assigned the same character** (reported feedback
+  showed two "Poppy"s at one table). `_usedCPUNames` only tracked names it
+  had generated itself, so explicitly selecting a character left that name
+  looking unclaimed and a later "Random CPU" could hand out a duplicate.
+  Replaced with `namesInUse()`, which reads the live setup inputs (both typed
+  names and explicitly-selected characters), making dedup self-correcting.
+  `startGame()` additionally rerolls a persona that collides with one already
+  claimed and syncs displayed names to the resolved characters. Verified over
+  300 trials of the exact failing scenario: zero duplicates.
+
+---
+
 ## Resolved — CPU announcements & turn visibility (2026-08-08-5)
 
 - **CPU declarations announced twice** (joker declarations, calling cards,
