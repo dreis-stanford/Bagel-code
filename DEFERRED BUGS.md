@@ -111,6 +111,56 @@ after the fact from a static snapshot.
 
 ---
 
+## Resolved — rules-compliance audit (2026-08-08)
+
+Systematic pass comparing `index.html` against `RULES.md`. Found and fixed:
+
+- **Wild substituting for the Queen of Spades in a SET** — the set-branch
+  auto-declaration picked "first unused suit" from `SUITS=['♠',...]`, so a
+  set of Queens (Q♥ Q♦ + wild) silently stamped the wild as **Q♠**, breaking
+  "A wild cannot substitute for the Queen of Spades" / "A joker may never be
+  declared as Q♠". Now excluded explicitly; if Q♠ is the only suit left the
+  meld is rejected.
+- **Wild-on-Q♠ in a spades RUN failed the whole meld instead of backtracking**
+  — `tryRun()` returned the first arrangement it found; if that put a wild on
+  the Q♠ slot, `valMeld` rejected the entire meld even when a legal
+  alternative placement existed. This contradicted the rules' own example:
+  "If a wild is at the end of a run and could validly occupy a non-Q♠
+  position instead (e.g. 10♠–J♠–wild, where the wild can be 9♠), the meld is
+  allowed." The Q♠ constraint now lives inside `tryRun`'s assignment loop, so
+  it naturally falls through to the valid alternative.
+- **`valMeld()` mutated `declaredAs` as a side effect, but was called for
+  previews** (17 call sites: Add dialog rendering, CPU combination searches,
+  pickup eligibility...). Merely PREVIEWING a wild against one meld
+  permanently stamped it, which then (a) made other legal melds display as
+  invalid, and (b) could record a joker with the wrong suit — breaking
+  redemption, since the redeemer must match the declaration. `valMeld` is now
+  pure by default; only `commitNewMeld`/`commitAddToMeld` pass `assign=true`.
+- **200-point end-game bonus went to the wrong player** — awarded to the
+  highest scorer over 1,000; rules say "the player who went out on the final
+  hand," which is often someone else. Now tracked via `G.finalHandWinnerIdx`.
+- **Check bonuses contradicted the rules** — "All Below"/"All Above" require
+  only that *naturals* fall in range ("and/or wilds" per the rules) but the
+  code required `!hasWilds`, making them nearly unearnable. "No Wilds" was
+  also wrongly excluded for Bagel/Dream hands despite the rules stating "A
+  Bagel hand can also earn a No Wilds check." Both corrected, plus a guard so
+  an empty meld set can't vacuously satisfy both via `[].every()===true`.
+- **Nothing prevented melding your entire hand** — rules require always
+  ending the turn with a discard ("you cannot go out by playing your last
+  card to a meld"), and melding everything also soft-locked the turn since
+  discard then had no card available. Guarded in both `confirmMeld` and
+  `confirmAdd`.
+
+Verified correct, no change needed: card point values, going-out +100,
+Bagel/Dream mutual exclusivity and payouts (10¢ vs 5¢), final settlement
+(5¢ per 500, round-down default / round-nearest option), set size 3–4,
+aces-high-only, 2-natural wild minimum, pile-pickup excluding wilds from the
+2-natural requirement, add-to-own-melds-only, dead-hand handling, and Perfect
+Cut (the two push sites are mutually exclusive CPU/human paths, not a double
+award).
+
+---
+
 ## Resolved this session (for reference — already fixed in current index.html)
 
 - **CPU pile-pickup force-merge without validation** (`cpuDraw`) — when

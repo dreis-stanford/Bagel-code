@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-06-30-1 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-1 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-06-30-1</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-1</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -948,7 +948,7 @@ function pushMeld(cp, cards, type){
 // Creates a brand-new meld on cp if `cards` is a valid meld. Returns true/false.
 function commitNewMeld(cp, cards){
   if(!cards||cards.length<3) return false;
-  const v=valMeld(cards);
+  const v=valMeld(cards,true); // committing — stamp declaredAs onto wilds
   if(!v.valid) return false;
   const nm={cards,type:v.type};
   sortMeld(nm);
@@ -971,7 +971,7 @@ function commitAddToMeld(meld, addCards){
   // (and partly is) corrupted even though the underlying cards are legal.
   const prevDecls=new Map();
   combo.forEach(c=>{if(c.wild){prevDecls.set(c,c.declaredAs);c.declaredAs=null;}});
-  const v=valMeld(combo);
+  const v=valMeld(combo,true); // committing — recompute/stamp declaredAs
   if(!v.valid||v.type!==meld.type){
     prevDecls.forEach((val,c)=>{c.declaredAs=val;}); // restore — nothing changed
     return false;
@@ -1641,6 +1641,13 @@ function confirmMeld(){
 
   const v=valMeld(sel);
   if(!v.valid){document.getElementById('meld-err').textContent=v.msg;return;}
+  // Rules: "You must always end your turn with a discard — you cannot go out
+  // by playing your last card to a meld." Melding the entire hand would also
+  // soft-lock the turn, since discarding then has no card available.
+  if(sel.length>=cp.hand.length){
+    document.getElementById('meld-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
+    return;
+  }
   if(!commitNewMeld(cp, sel)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   G.sel=[];cp.hasEverMelded=true;
@@ -1651,7 +1658,17 @@ function confirmMeld(){
   cm('m-meld');clearSt();autoDecl();updateGame();
 }
 
-function valMeld(cards){
+// valMeld(cards, assign)
+//   assign=false (DEFAULT): pure validity check, NO mutation. Use for every
+//     preview/search/what-if call (rendering the Add dialog, CPU combination
+//     searches, pickup eligibility, etc).
+//   assign=true: also stamps declaredAs onto wild cards. ONLY the commit
+//     helpers (commitNewMeld / commitAddToMeld) may pass true.
+// This split matters: valMeld used to always mutate, so merely PREVIEWING a
+// wild against one meld permanently stamped it — which then made other
+// legal melds show as invalid, and could record a joker with the wrong
+// suit (breaking redemption, since the redeemer must match the declaration).
+function valMeld(cards,assign=false){
   const nat=cards.filter(c=>!c.wild),wld=cards.filter(c=>c.wild);
   if(wld.length>0&&nat.length<2) return{valid:false,msg:'Needs at least 2 natural cards when using wilds.'};
   if(trySet(cards)){
@@ -1663,13 +1680,22 @@ function valMeld(cards){
     // (e.g. a human picked a suit for a Joker via the meld dialog), keep it.
     const setRank=nat[0].rank;
     const usedSuits=new Set(nat.map(c=>c.suit));
-    wld.forEach(w=>{
-      if(!w.declaredAs){
-        const availSuit=SUITS.find(s=>!usedSuits.has(s))||SUITS[0];
-        usedSuits.add(availSuit);
-        w.declaredAs=setRank+availSuit;
-      }
-    });
+    // A wild may NEVER stand in for the Queen of Spades (rules: "A wild
+    // cannot substitute for the Queen of Spades", "A joker may never be
+    // declared as Q♠"). In a set of Queens the naive "first unused suit"
+    // pick would hand out ♠ first and silently create a wild-as-Q♠, so
+    // exclude that combination explicitly.
+    const isQSpades=(rank,suit)=>rank==='Q'&&suit==='♠';
+    if(wld.some(w=>w.declaredAs&&isQSpades(setRank,w.declaredAs.slice(-1))))
+      return{valid:false,msg:'A wild cannot represent the Queen of Spades.'};
+    for(const w of wld){
+      if(w.declaredAs) continue;
+      const availSuit=SUITS.find(s=>!usedSuits.has(s)&&!isQSpades(setRank,s));
+      if(!availSuit)
+        return{valid:false,msg:'No valid suit left for the wild in this set (a wild cannot be the Queen of Spades).'};
+      usedSuits.add(availSuit); // reserve it either way so validity is consistent
+      if(assign) w.declaredAs=setRank+availSuit;
+    }
     return{valid:true,type:'set'};
   }
   const runResult=tryRun(cards); // returns {valid, assignedRanks} or false
@@ -1683,8 +1709,9 @@ function valMeld(cards){
       if(wildOnQ)
         return{valid:false,msg:'A wild cannot occupy the Queen of Spades position in this spades run. Try reordering the cards to place the wild in a different position.'};
     }
-    // Assign declaredAs to wilds based on their position in the run (only if not already set)
-    runResult.assignedRanks.forEach(({card,rank})=>{
+    // Assign declaredAs to wilds based on their position in the run — only
+    // when committing, and only if not already explicitly set.
+    if(assign) runResult.assignedRanks.forEach(({card,rank})=>{
       if(card.wild&&!card.declaredAs){
         const rankName=Object.keys(RO).find(k=>RO[k]===rank)||rank;
         card.declaredAs=rankName+(runResult.suit||'');
@@ -1756,6 +1783,14 @@ function tryRun(cards){
     const wilds=[...cards.filter(c=>c.wild)];
     let wildIdx=0,valid=true;
     const assignedRanks=[];
+    // A wild may never occupy the Q♠ slot of a spades run (unless the actual
+    // natural Q♠ is in the meld). Treat that as a constraint HERE rather than
+    // letting the arrangement through and rejecting it later, so that when a
+    // legal alternative placement exists we fall through to it. The rules
+    // call this out directly: "If a wild is at the end of a run and could
+    // validly occupy a non-Q♠ position instead (e.g. 10♠–J♠–wild, where the
+    // wild can be 9♠), the meld is allowed."
+    const spadesRun=suit==='♠',hasNaturalQS=nat.some(c=>c.qs);
     for(let rank=runStart;rank<=runEnd;rank++){
       if(natByRank.has(rank)){
         assignedRanks.push({card:natByRank.get(rank),rank});
@@ -1764,6 +1799,7 @@ function tryRun(cards){
         const w=wilds[wildIdx++];
         const dr=declRank(w);
         if(dr!==null&&dr!==rank){valid=false;break;} // respect explicit declaration
+        if(spadesRun&&rank===12&&!hasNaturalQS){valid=false;break;} // no wild on Q♠
         assignedRanks.push({card:w,rank});
       }
     }
@@ -1799,6 +1835,12 @@ function confirmAdd(mi){
   if(preview.type!==em.type){document.getElementById('add-err').textContent='Cannot change meld type when adding cards.';return;}
   if(G.redeemMustMeld&&!sel.some(c=>c.id===G.mustMeldTopId)){
     document.getElementById('add-err').textContent='Must include the redeemed Joker!';return;
+  }
+  // Rules: must always retain a card to discard — cannot go out by adding
+  // your last card to a meld.
+  if(sel.length>=cp.hand.length){
+    document.getElementById('add-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
+    return;
   }
   if(!commitAddToMeld(em,sel)){document.getElementById('add-err').textContent='Not a valid meld.';return;}
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
@@ -2437,15 +2479,25 @@ function endHand(wi){
   G.players.forEach((p,i)=>{if(i!==wi)p.money-=payout;});
   winner.money+=payout*(G.players.length-1);
 
-  // Check bonuses for winner
+  // Check bonuses for winner.
+  // Rules notes driving this logic:
+  //  - "No Wilds: Go out with no wild cards in your melds" — this stands on
+  //    its own, and "A Bagel hand can also earn a No Wilds check", so it is
+  //    NOT excluded by Bagel or Dream.
+  //  - "All Below: Go out with only 3–7 cards (and/or wilds)" and
+  //    "All Above: Go out with only 8–A cards (and/or wilds)" — wilds are
+  //    explicitly PERMITTED in both, so these must not require !hasWilds.
+  //  - "All Below ... Q♠ cannot appear"; "All Above ... Q♠ counts as above".
+  const naturals=meldedCards.filter(c=>!c.wild);
   const hasWilds=meldedCards.some(c=>c.wild);
-  const allBelow=meldedCards.filter(c=>!c.wild).every(c=>['3','4','5','6','7'].includes(c.rank));
-  const allAbove=meldedCards.filter(c=>!c.wild).every(c=>['8','9','10','J','Q','K','A'].includes(c.rank)||c.qs);
+  // Guard on naturals.length so an empty meld set can't vacuously satisfy
+  // both All Below and All Above via [].every()===true.
+  const allBelow=naturals.length>0&&naturals.every(c=>['3','4','5','6','7'].includes(c.rank)&&!c.qs);
+  const allAbove=naturals.length>0&&naturals.every(c=>['8','9','10','J','Q','K','A'].includes(c.rank)||c.qs);
 
-  if(!hasWilds&&!isBagel&&!isDream) winner.checks.push({hand:G.hand+1,type:'No Wilds'});
-  if(allBelow&&!hasWilds) winner.checks.push({hand:G.hand+1,type:'All Below'});
-  if(allAbove&&!hasWilds) winner.checks.push({hand:G.hand+1,type:'All Above'});
-  if(!hasWilds&&(allBelow||allAbove)&&isBagel) winner.checks.push({hand:G.hand+1,type:'No Wilds'});
+  if(!hasWilds) winner.checks.push({hand:G.hand+1,type:'No Wilds'});
+  if(allBelow) winner.checks.push({hand:G.hand+1,type:'All Below'});
+  if(allAbove) winner.checks.push({hand:G.hand+1,type:'All Above'});
   if(isBagel) winner.bagels.push({hand:G.hand+1});
   if(isDream) winner.checks.push({hand:G.hand+1,type:'Dream'});
 
@@ -2518,6 +2570,10 @@ function showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove){
   if(G.players.some(p=>p.points>=1000)){
     html+=`<div class="status-bar" style="margin-top:1rem;">A player has reached 1,000 points — game over! Tallying final scores...</div>`;
     document.getElementById('eh-content').innerHTML=html;
+    // Remember WHO went out on this (final) hand — the rules award the
+    // 200-point end-game bonus to that player specifically, which is not
+    // necessarily the highest scorer.
+    G.finalHandWinnerIdx=wi;
     G.dealerIdx=wi;G.hand++;
     // Auto-proceed to final scores after a short delay
     setTimeout(()=>showFinal(),2000);
@@ -2532,8 +2588,12 @@ function nextHand(){dealHand();}
 function showFinal(){
   showSc('final');
   const ps=[...G.players];
-  const over=ps.filter(p=>p.points>=1000).sort((a,b)=>b.points-a.points);
-  if(over.length) over[0].points+=200;
+  // Rules: "Award the 200-point end-game bonus to the player who went out on
+  // the final hand." That is whoever ended the last hand — NOT simply the
+  // highest scorer (the previous behavior), since the player who goes out is
+  // often not the one who crossed 1,000.
+  const finalWinner=G.players[G.finalHandWinnerIdx];
+  if(finalWinner) finalWinner.points+=200;
   ps.forEach(p=>{p.fp=p.points+p.checks.length*100+p.bagels.length*250;});
   ps.sort((a,b)=>b.fp-a.fp);const top=ps[0];
   ps.forEach(p=>{if(p===top)return;const d=top.fp-p.fp,u=G.optRM?Math.round(d/500):Math.floor(d/500);top.money+=u*5;p.money-=u*5;});

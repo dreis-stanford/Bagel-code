@@ -65,7 +65,8 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - `G` object = full game state
 - Card: `{id, deck, rank, suit, wild, joker, qs, declaredAs}`
 - `tryRun()` → `{valid, suit, assignedRanks}` assigns ranks to wilds by selection order
-- `valMeld()` only sets declaredAs if `!card.declaredAs`
+- `valMeld(cards, assign=false)` — **pure by default (no mutation)**; only stamps `declaredAs` onto wilds when `assign=true`, which ONLY the commit helpers pass. Every preview/search call (Add dialog, CPU combination search, pickup eligibility) must use the default, or previewing a wild will corrupt its declaration and make other legal melds appear invalid.
+- `tryRun()` enforces the "no wild on the Q♠ slot of a spades run" constraint INSIDE its arrangement loop, so it backtracks to a legal alternative placement rather than failing the meld outright (per the rules' 10♠–J♠–wild example)
 - `canBagel(hand)` / `canMeldAll(hand,_iters)` — recursive, 2000-iter limit, works on copies
 - `canBagelCached(cp)` — cached by id+turnCount+handLength
 - `shouldCall(cp)` — ≤3 cards after discard OR canBagelCached non-null
