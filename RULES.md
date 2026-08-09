@@ -95,7 +95,7 @@ The order in which cards are selected for a run defines the sequence (low to hig
 
 ### Meld Restrictions
 - You may only add cards to your own melds.
-- Once played, melds cannot be rearranged (except via Joker redemption).
+- Once played, melds cannot be rearranged (except via Joker redemption). In particular, **a wild permanently owns the position it was played into** — if a wild stands in for 8♠, that slot is filled forever, and a natural 8♠ can never be added to displace it. You may still extend the run at either end.
 - No minimum point threshold to begin melding.
 
 ### Joker Redemption

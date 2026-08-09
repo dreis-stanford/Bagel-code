@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-13 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-17 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-13</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-17</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -1104,10 +1104,18 @@ function pushMeld(cp, cards, type){
 }
 
 // Creates a brand-new meld on cp if `cards` is a valid meld. Returns true/false.
-function commitNewMeld(cp, cards){
+// keepDecl: ids of wilds whose declaredAs the CALLER just set deliberately
+// (the human's tappable picker). Every other wild has its declaration
+// recomputed from scratch, so a leftover value from an abandoned candidate
+// meld can never survive into a new one — the same protection
+// commitAddToMeld already had.
+function commitNewMeld(cp, cards, keepDecl){
   if(!cards||cards.length<3) return false;
+  const keep=keepDecl instanceof Set?keepDecl:new Set(keepDecl||[]);
+  const prev=new Map();
+  cards.forEach(c=>{if(c.wild&&!keep.has(c.id)){prev.set(c,c.declaredAs);c.declaredAs=null;}});
   const v=valMeld(cards,true); // committing — stamp declaredAs onto wilds
-  if(!v.valid) return false;
+  if(!v.valid){prev.forEach((val,c)=>{c.declaredAs=val;});return false;}
   const nm={cards,type:v.type};
   sortMeld(nm);
   cp.melds.push(nm);
@@ -1119,16 +1127,18 @@ function commitNewMeld(cp, cards){
 function commitAddToMeld(meld, addCards){
   if(!addCards||!addCards.length) return false;
   const combo=[...meld.cards,...addCards];
-  // Wild cards already in the meld may carry a declaredAs from BEFORE this
-  // extension (e.g. a 3-card run where a deuce was declared low). Adding more
-  // cards can change the valid run shape entirely (e.g. the gap the wild was
-  // filling gets taken by a new natural), which means that old declaration
-  // may no longer be correct. Clear it so tryRun freely recomputes the right
-  // position for the new, larger run — otherwise the wild keeps its stale
-  // label/rank, sortMeld sorts it into the wrong spot, and the meld looks
-  // (and partly is) corrupted even though the underlying cards are legal.
+  // Only the cards being ADDED get a fresh declaration. Wilds ALREADY in the
+  // meld keep theirs permanently — the rules forbid rearranging a meld once
+  // played, so a wild occupying (say) the 8♠ slot owns that slot forever.
+  //
+  // This used to clear every wild in the combined meld, which let an added
+  // natural displace a committed wild: adding 8♠ to `2♣(=8♠) 9♠ 10♠ J♠`
+  // silently re-declared the deuce as 7♠ and produced `2♣(=7♠) 8♠ 9♠ 10♠ J♠`.
+  // That is an illegal rearrangement — the correct outcome is to REJECT the
+  // addition, because the 8♠ position is already occupied.
+  const addSet=new Set(addCards.map(c=>c.id));
   const prevDecls=new Map();
-  combo.forEach(c=>{if(c.wild){prevDecls.set(c,c.declaredAs);c.declaredAs=null;}});
+  combo.forEach(c=>{if(c.wild&&addSet.has(c.id)){prevDecls.set(c,c.declaredAs);c.declaredAs=null;}});
   const v=valMeld(combo,true); // committing — recompute/stamp declaredAs
   if(!v.valid||v.type!==meld.type){
     prevDecls.forEach((val,c)=>{c.declaredAs=val;}); // restore — nothing changed
@@ -1279,7 +1289,8 @@ function renderAllPlayers(){
     // instead of an unexplained "Continue".
     let continueHtml='';
     if(isActive&&isCPU&&G.awaitingCPUAck){
-      const acts=(G.cpuTurnLog&&G.cpuTurnLog.length)?G.cpuTurnLog:['took its turn'];
+      const own=cpuLogFor(p.id);
+      const acts=own.length?own:['took its turn'];
       const items=acts.map(a=>`<li style="margin-bottom:2px;">${a}</li>`).join('');
       continueHtml=`<div style="margin-top:10px;">
         <div style="background:#eef4fb;border:1px solid #c3d7ec;border-radius:8px;padding:10px 12px;text-align:left;font-size:13px;color:#24405e;">
@@ -1395,9 +1406,16 @@ function renderHand(){ renderAllPlayers(); }
 // a blank "Continue" with no idea what happened.
 function cpuLog(msg){
   if(!G.cpuTurnLog) G.cpuTurnLog=[];
-  G.cpuTurnLog.push(msg);
+  // Tag with WHOSE turn it was. Entries were previously untagged, so anything
+  // left over from a prior player's turn would be displayed as if the current
+  // CPU had done it.
+  const who=G.players[G.currentIdx];
+  G.cpuTurnLog.push({pid:who?who.id:-1,msg});
 }
 function cpuLogReset(){ G.cpuTurnLog=[]; }
+function cpuLogFor(pid){
+  return (G.cpuTurnLog||[]).filter(e=>e&&e.pid===pid).map(e=>e.msg);
+}
 function cpuLogCards(cards){ return cards.map(c=>cLbl(c)).join(' '); }
 
 function announceEvent(msg,actingIdx){
@@ -1981,7 +1999,8 @@ function confirmMeld(){
     document.getElementById('meld-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
     return;
   }
-  if(!commitNewMeld(cp, sel)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
+  const keepIds=chosen?chosen.assignments.map(a=>a.id):[];
+  if(!commitNewMeld(cp, sel, keepIds)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   G.sel=[];cp.hasEverMelded=true;
   if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;G.redeemMustMeld=false;}
@@ -2127,7 +2146,7 @@ function tryRun(cards){
     // Assign ranks: naturals go to their correct rank position, wilds fill gaps
     const natByRank=new Map(nat.map(c=>[RO[c.rank],c]));
     const wilds=[...cards.filter(c=>c.wild)];
-    let wildIdx=0,valid=true;
+    let valid=true;
     const assignedRanks=[];
     // A wild may never occupy the Q♠ slot of a spades run (unless the actual
     // natural Q♠ is in the meld). Treat that as a constraint HERE rather than
@@ -2137,19 +2156,34 @@ function tryRun(cards){
     // validly occupy a non-Q♠ position instead (e.g. 10♠–J♠–wild, where the
     // wild can be 9♠), the meld is allowed."
     const spadesRun=suit==='♠',hasNaturalQS=nat.some(c=>c.qs);
+    // Work out which ranks the naturals cover and which gaps wilds must fill.
+    const gaps=[];
     for(let rank=runStart;rank<=runEnd;rank++){
-      if(natByRank.has(rank)){
-        assignedRanks.push({card:natByRank.get(rank),rank});
-      } else {
-        if(wildIdx>=wilds.length){valid=false;break;}
-        const w=wilds[wildIdx++];
-        const dr=declRank(w);
-        if(dr!==null&&dr!==rank){valid=false;break;} // respect explicit declaration
-        if(spadesRun&&rank===12&&!hasNaturalQS){valid=false;break;} // no wild on Q♠
-        assignedRanks.push({card:w,rank});
-      }
+      if(natByRank.has(rank)) assignedRanks.push({card:natByRank.get(rank),rank});
+      else gaps.push(rank);
     }
-    if(valid&&wildIdx===wilds.length) return{valid:true,suit,assignedRanks};
+    if(gaps.length!==wilds.length) continue;
+    // Wilds ALREADY declared own a specific rank and must be placed there —
+    // a meld can't be rearranged. Place those first, then let undeclared
+    // wilds fill whatever gaps remain. (Assigning strictly in array order
+    // would wrongly reject e.g. adding a fresh wild at 7♠ to a run whose
+    // committed wild sits at 8♠, merely because of card ordering.)
+    const remaining=new Set(gaps);
+    const declaredW=wilds.filter(w=>declRank(w)!==null);
+    const freeW=wilds.filter(w=>declRank(w)===null);
+    for(const w of declaredW){
+      const r=declRank(w);
+      if(!remaining.has(r)){valid=false;break;}
+      remaining.delete(r);
+      assignedRanks.push({card:w,rank:r});
+    }
+    if(valid){
+      const rest=[...remaining].sort((a,b)=>a-b);
+      freeW.forEach((w,i)=>assignedRanks.push({card:w,rank:rest[i]}));
+      // No wild may sit on the Q♠ slot of a spades run.
+      if(spadesRun&&!hasNaturalQS&&assignedRanks.some(x=>x.card.wild&&x.rank===12)) valid=false;
+    }
+    if(valid) return{valid:true,suit,assignedRanks};
   }
   return false;
 }
@@ -2604,76 +2638,87 @@ function clearCPUAction(){
   if(el){el.innerHTML='';el.style.display='none';}
 }
 
+// Pure check: could `addCards` be legally added to this meld? Mirrors what
+// commitAddToMeld does (including clearing wild declarations so they can be
+// recomputed) but mutates nothing.
+function canAddToMeld(meld,addCards){
+  const combo=[...meld.cards,...addCards];
+  const saved=new Map();
+  combo.forEach(c=>{if(c.wild){saved.set(c,c.declaredAs);c.declaredAs=null;}});
+  const v=valMeld(combo);
+  saved.forEach((val,c)=>{c.declaredAs=val;});
+  return v.valid&&v.type===meld.type;
+}
+
+// Works out — BEFORE any cards move — exactly how the top discard would be
+// melded if we took the pile. Returns a plan that is guaranteed to commit, or
+// null. The rules require the top card to be melded immediately using 2+
+// naturals from hand OR already on the table, so there are exactly two shapes:
+//   'extend' – top card joins one of our existing melds (that meld supplies
+//              the naturals)
+//   'new'    – top card plus 2-3 naturals from HAND form a brand-new meld
+function planPilePickup(cp,top){
+  let best=null;
+  const consider=pl=>{if(!best||pl.pts>best.pts)best=pl;};
+
+  // 'extend': the existing meld must already hold 2+ naturals.
+  cp.melds.forEach((m,mi)=>{
+    if(m.cards.filter(c=>!c.wild).length<2) return;
+    if(canAddToMeld(m,[top])) consider({kind:'extend',meldIdx:mi,pts:cPts(top,false)});
+  });
+
+  // 'new': top + 2 or 3 naturals from hand.
+  const handNaturals=cp.hand.filter(c=>!c.wild);
+  for(const pair of combinations(handNaturals,2)){
+    const c3=[top,...pair];
+    if(valMeld(c3).valid) consider({kind:'new',cards:c3,pts:c3.reduce((a,c)=>a+cPts(c,false),0)});
+    for(const extra of handNaturals.filter(c=>!pair.includes(c))){
+      const c4=[top,...pair,extra];
+      if(valMeld(c4).valid) consider({kind:'new',cards:c4,pts:c4.reduce((a,c)=>a+cPts(c,false),0)});
+    }
+  }
+  return best;
+}
+
 function cpuDraw(cp){
-  // Conservative: consider picking up pile if top card forms a valuable meld
   const top=G.discardPile[G.discardPile.length-1];
   if(top && G.discardPile.length<=8){ // don't pick up huge piles
-    const naturalsInHand=cp.hand.filter(c=>!c.wild);
-    const naturalsOnTable=cp.melds.flatMap(m=>m.cards.filter(c=>!c.wild));
-    const allNaturals=[...naturalsInHand,...naturalsOnTable];
-    // Try all pairs of naturals to see if top card forms a valid meld with them
-    let bestMeld=null,bestPts=0;
-    const combos=combinations(allNaturals,2);
-    for(const pair of combos){
-      const testCards=[top,...pair];
-      const v=valMeld(testCards);
-      if(v.valid){
-        const pts=testCards.reduce((s,c)=>s+cPts(c,false),0);
-        if(pts>bestPts){bestPts=pts;bestMeld=testCards;}
-      }
-      // Also try 3 naturals
-      for(const extra of allNaturals.filter(c=>!pair.includes(c))){
-        const testCards4=[top,...pair,extra];
-        const v4=valMeld(testCards4);
-        if(v4.valid){
-          const pts4=testCards4.reduce((s,c)=>s+cPts(c,false),0);
-          if(pts4>bestPts){bestPts=pts4;bestMeld=testCards4;}
-        }
-      }
-    }
-    // Pick up if meld value > 20pts (worth more than a typical draw)
-    // and pile size is manageable
-    if(bestMeld && bestPts>20){
-      // Execute pickup
+    // Decide the whole plan FIRST. The old code took the pile and only then
+    // tried to commit — and because it validated the top card as a STANDALONE
+    // meld while committing it as an ADDITION to an existing meld (a different
+    // question entirely), the commit often failed. The CPU was then left
+    // holding the pile having melded nothing, which the rules forbid.
+    const plan=planPilePickup(cp,top);
+    if(plan && plan.pts>20){
       const pileCards=[...G.discardPile];
-      cpuLog(`picked up the discard pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
-      G.pickedUpCount=G.discardPile.length;
+      cpuLog(`picked up the pile (${pileCards.length} card${pileCards.length!==1?'s':''})`);
+      G.pickedUpCount=pileCards.length;
       G.discardPile=[];
       pileCards.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
       G.drewCard=true;G.phase='play';
-      // Separate hand cards from table cards in bestMeld to avoid duplicates
-      const tableNatIds=new Set(cp.melds.flatMap(m=>m.cards.map(c=>c.id)));
-      const meldFromHand=bestMeld.filter(c=>!tableNatIds.has(c.id));
-      const meldFromTable=bestMeld.filter(c=>tableNatIds.has(c.id));
-      const v=valMeld(bestMeld);
-      if(v.valid){
-        if(v.type==='run'){const rr=tryRun(bestMeld);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-        let committedHandCards=[];
-        if(meldFromTable.length>0){
-          // Extend existing meld rather than create duplicate
-          const meldIdx=cp.melds.findIndex(m=>m.cards.some(c=>meldFromTable.some(t=>t.id===c.id)));
-          if(meldIdx>=0){
-            if(commitAddToMeld(cp.melds[meldIdx],meldFromHand)){
-              cpuLog(`added ${cpuLogCards(meldFromHand)} to an existing meld`);
-              committedHandCards=meldFromHand;
-            } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
-              cpuLog(`melded ${cpuLogCards(meldFromHand)}`);
-              committedHandCards=meldFromHand;
-            }
-            // else: cannot validly commit these hand cards anywhere — leave them
-            // in hand rather than forcing an invalid merge onto the existing meld.
-          } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
-            cpuLog(`melded ${cpuLogCards(meldFromHand)}`);
-            committedHandCards=meldFromHand;
-          }
-        } else {
-          if(commitNewMeld(cp,bestMeld)){cpuLog(`melded ${cpuLogCards(bestMeld)}`);committedHandCards=meldFromHand;}
+
+      let used=[];
+      if(plan.kind==='extend'){
+        if(commitAddToMeld(cp.melds[plan.meldIdx],[top])){
+          cpuLog(`added ${cLbl(top)} to an existing meld`);
+          used=[top];
         }
-        committedHandCards.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
-        if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
-        if(committedHandCards.length) cp.hasEverMelded=true;
+      } else {
+        if(commitNewMeld(cp,plan.cards)){
+          cpuLog(`melded ${cpuLogCards(plan.cards)}`);
+          used=plan.cards;
+        }
       }
+      if(!used.length){
+        // Should be unreachable — the plan was pre-verified. Log loudly rather
+        // than silently leaving the pickup unmelded.
+        console.warn('cpuDraw: pre-verified pickup plan failed to commit',plan);
+        cpuLog('⚠ pickup could not be melded');
+      }
+      used.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+      if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+      if(used.length) cp.hasEverMelded=true;
       return;
     }
   }
@@ -2695,14 +2740,7 @@ function cpuMeld(cp){
     if(meld){
       const v=valMeld(meld);
       if(v.valid){
-        // Auto-assign declaredAs for jokers in runs
-        if(v.type==='run'&&tryRun(meld)){
-          const rr=tryRun(meld);
-          if(rr&&rr.assignedRanks) rr.assignedRanks.forEach(({card,rank})=>{
-            if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}
-          });
-        }
-        pushMeld(cp,meld,v.type);
+        pushMeld(cp,meld,v.type); // assigns wild declarations itself
         cpuLog(`melded ${cpuLogCards(meld)}`);
         meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -2830,7 +2868,7 @@ function cpuDiscard(cp){
     const nonSpecial=sorted.find(c=>!isSp(c));
     if(!nonSpecial){
       // All specials — can only go out or wait; discard if going out
-      if(goOut){cp.hand=[];G.discardPile.push(toDiscard);endHand(G.currentIdx);return;}
+      if(goOut){cpuLog(`discarded ${cLbl(toDiscard)}`);cp.hand=[];G.discardPile.push(toDiscard);endHand(G.currentIdx);return;}
       // Stuck — this shouldn't happen in normal play but skip turn gracefully
       endTurnHO();return;
     }
@@ -2939,8 +2977,7 @@ function gamblerDiscard(cp){
         for(const combo of combos){
           const v=valMeld(combo);
           if(v.valid){
-            if(v.type==='run'){const rr=tryRun(combo);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
-            pushMeld(cp,combo,v.type);
+            pushMeld(cp,combo,v.type); // assigns wild declarations itself
             cpuLog(`melded ${cpuLogCards(combo)}`);
             combo.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
             if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -2973,6 +3010,7 @@ function cpuDoDiscard(cp,card,goOut){
   }
   if(!goOut&&cp.missedDeclaration){
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
+    cpuLog(`discarded ${cLbl(card)}`); // this path used to log nothing
     cp.missedDeclaration=false;autoDecl();updateGame();cpuAfterDiscard();return;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
@@ -3064,7 +3102,10 @@ function ackCPUDiscard(){
 
 function endTurnHO(){
   noteProgress();
-  G.pickedUpCount=0; // pile-pickup go-out exception applies only to the turn it happened
+  G.pickedUpCount=0;
+  // A wild in HAND represents nothing — only a melded wild has a declaration.
+  // Clearing here stops any stray value leaking into a future meld.
+  G.players.forEach(p=>p.hand.forEach(c=>{if(c.wild&&!G.redeemMustMeld)c.declaredAs=null;})); // pile-pickup go-out exception applies only to the turn it happened
   G.awaitingCPUAck=false;
   const cp=G.players[G.currentIdx];
   cp.turnCount++;

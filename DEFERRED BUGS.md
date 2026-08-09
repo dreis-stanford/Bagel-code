@@ -143,6 +143,149 @@ add-to-existing pass instead of retrying.
 
 ---
 
+## Resolved — melds could be illegally rearranged (2026-08-08-17)
+
+**Reported:** Egg picked up the pile with 8♠ and added it to its meld
+`2♣ 9♠ 10♠ J♠`, producing `2♣ 8♠ 9♠ 10♠ J♠`. The 2♣ had been standing in for
+8♠; the addition silently re-declared it as 7♠ so the natural 8♠ could take
+its place. Illegal — melds cannot be rearranged, and a wild owns its slot
+permanently. The correct outcome is to reject the addition.
+
+**Root cause (self-inflicted).** `commitAddToMeld` cleared the declarations of
+EVERY wild in the combined meld before revalidating — including wilds already
+committed. That clearing was added earlier this session to fix "stale wild
+declarations after extending a run", but that reasoning was itself wrong: a
+committed wild's rank never legitimately changes. The real cause of those
+stale values was premature declaration assignment, fixed properly in
+2026-08-08-14. The clearing then remained as pure harm.
+
+**Fixes:**
+- `commitAddToMeld` now clears declarations ONLY on the cards being added.
+  Wilds already in the meld keep their rank permanently.
+- `tryRun` reworked to place already-declared wilds at their fixed ranks
+  FIRST, then fill remaining gaps with undeclared wilds. It previously
+  assigned wilds to gaps in array order, which wrongly rejected legal
+  additions — e.g. adding a fresh wild at 7♠ to a run whose committed wild
+  sits at 8♠ failed purely because of card ordering. The Q♠ guard now applies
+  to the final placement rather than mid-loop.
+
+Verified: adding 8♠ to `2♣(=8♠) 9♠ 10♠ J♠` is rejected; adding 7♠ or Q♠ is
+accepted with the deuce unmoved; adding a fresh wild is accepted and correctly
+takes 7♠ while the committed deuce stays at 8♠. Q♠ guard and set/run
+validation unaffected.
+
+---
+
+## Resolved — CPU took the pile without melding the top card (2026-08-08-16)
+
+**Reported:** Egg picked up the pile but melded nothing — no top card, no
+2 naturals from hand or table. A direct rules violation.
+
+**Root cause — TWO flaws, confirmed by reproduction.**
+
+*(1) The candidate search was illegal.* It pooled hand naturals and table
+naturals into one list and tested pairs from that combined pool, so it could
+"find" a meld built from cards locked inside DIFFERENT existing melds — cards
+that can never leave to form a new meld. Reproduced on Egg's exact board
+(melds `2♣ 9♠ 10♠ J♠`, `8♥ 9♥ 10♥`, `J♣ Q♣ K♣ A♣`): with **J♦** on top the
+old search returned `J♦ + J♠[meld1] + J♣[meld3]` — a meld that was never
+possible. The CPU took the pile on the strength of that phantom. This also
+explains the phantom "J♦" in the 2026-08-08-15 report: the log line was real,
+it just described a meld that could not exist.
+
+*(2) An ordering bug.* `cpuDraw()` took the pile FIRST and only
+then attempted to commit the meld. Worse, the two steps asked *different
+questions*: `bestMeld` was validated as a STANDALONE meld (top card + 2
+naturals), but when those naturals lived on the table the code then called
+`commitAddToMeld` — i.e. "can the top card join this existing meld?", a
+different validity test entirely. That routinely failed, and because a fix
+earlier in this session had (correctly) stopped it force-merging invalid
+melds, the failure path now simply left the cards in hand. Net effect: pile
+taken, nothing melded. The earlier fix turned an illegal *meld* into an
+illegal *pickup*.
+
+**Fix — decide before touching any cards.** New `planPilePickup(cp,top)`
+computes a plan up front and returns it only if it is guaranteed to commit:
+  • `'extend'` — the top card joins one of our existing melds (that meld must
+    already hold 2+ naturals, per the rules), verified with the new pure
+    helper `canAddToMeld()`
+  • `'new'` — the top card plus 2-3 naturals FROM HAND form a valid new meld
+If no plan exists the CPU simply draws a fresh card instead. The pile is only
+taken once a verified plan is in hand, then executed. A defensive
+console.warn plus visible log line covers the now-unreachable failure case
+rather than failing silently.
+
+The pooling flaw is closed because a `'new'` plan now considers ONLY hand
+naturals, and an `'extend'` plan only ever adds the top card to ONE actual
+existing meld — cards can never be borrowed across melds.
+
+Verified on Egg's exact board: top card J♦ now yields `plan = null`, so the
+CPU draws a fresh card instead of taking the pile. Legitimate plans still
+work (J♥ correctly extends the heart run 8♥ 9♥ 10♥), and every plan produced
+commits successfully.
+
+---
+
+## Resolved — CPU summary omitted discards & could misattribute actions (2026-08-08-15)
+
+**Reported:** Egg's summary claimed it added J♦ (Jack of diamonds) to a meld —
+a card that appeared nowhere, in no hand and no meld — and separately omitted
+that it discarded a 5♠.
+
+**Missing discard — confirmed and fixed.** There are three CPU discard sites
+and only ONE was logging:
+  • `cpuDoDiscard()` main path — was logged ✓
+  • `cpuDoDiscard()` missedDeclaration path — logged nothing ✗
+  • `cpuDiscard()` all-specials go-out path — logged nothing ✗
+So any CPU discarding via the latter two produced a summary with no discard
+line at all. Both now log.
+
+**Phantom J♦ — mitigated by attribution.** `G.cpuTurnLog` was a single shared
+list of bare strings with no record of WHOSE turn produced each entry, and the
+CPU zone rendered the whole list. Any entry surviving from another player's
+turn would therefore be displayed as though the current CPU had done it —
+which fits a summary naming a card that player never held. Entries are now
+tagged with the acting player's id and the zone renders only its own via
+`cpuLogFor(pid)`, so cross-player contamination is structurally impossible.
+(Note: this was a plausible cause but not directly reproduced. If a phantom
+action is ever reported again, it is now provably that player's own action.)
+
+---
+
+## Resolved — stale wild declarations leaking between melds (2026-08-08-14)
+
+**Reported:** Egg's meld showed a joker declared as a DIAMOND while sitting in
+a HEARTS run (`4♥ 2♠ 6♥ 2♠ ★JK`), and the turn summary described adding it to
+a meld that didn't appear to exist.
+
+**Root cause:** three CPU code paths stamped `card.declaredAs` onto wilds
+*before* knowing whether that meld would actually be committed — leftovers
+from before `commitNewMeld`/`commitAddToMeld` handled assignment:
+  • `cpuDraw()` pile-pickup candidate (the likely culprit here)
+  • `cpuMeld()` new-meld path
+  • the gambler's bagel lay-down
+If the candidate was then abandoned (pickup not committed, meld rejected), the
+wild kept a declaration describing a run it never joined — while still sitting
+in hand. When it was later melded into a genuinely different suit,
+`valMeld(...,true)` skipped it, because it only assigns when `!declaredAs`.
+Hence a diamond-labelled joker inside a hearts run.
+
+**Fixes:**
+- Removed all three premature assignments; the commit helpers do it, once, and
+  only on success.
+- `commitNewMeld` now clears and recomputes wild declarations before
+  validating (matching `commitAddToMeld`), with a `keepDecl` id list so the
+  human's explicitly tapped choice is preserved. Restores prior values if the
+  meld turns out invalid.
+- Safety net in `endTurnHO()`: a wild sitting in a HAND represents nothing, so
+  any lingering declaration is cleared at end of turn (skipped while a
+  redeemed joker is pending, since the rules say it retains its declaration).
+
+Verified: a joker carrying a stale `J♦` now recomputes to `7♥` when melded into
+a hearts run; an explicit human choice survives; failures roll back cleanly.
+
+---
+
 ## Resolved — corrected a bad "fix": wild suits in SETS (2026-08-08-13)
 
 Self-inflicted. In 2026-08-08-12 I claimed to fix a "collision" where a deuce
