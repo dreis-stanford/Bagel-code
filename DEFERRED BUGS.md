@@ -143,6 +143,83 @@ add-to-existing pass instead of retrying.
 
 ---
 
+## Resolved — corrected a bad "fix": wild suits in SETS (2026-08-08-13)
+
+Self-inflicted. In 2026-08-08-12 I claimed to fix a "collision" where a deuce
+could be auto-assigned the same suit a joker had been declared as. **There was
+no such bug**, and the change I made to prevent it broke a legal meld.
+
+Why there was nothing to fix:
+- Neither a joker nor a deuce has a suit of its own.
+- For a DEUCE, `declaredAs` in a set is meaningless anyway — scoring reads
+  only the rank ("Deuces score the value of the card they stand in for"), so a
+  deuce in a set of 7s scores 5 whatever suit is stamped on it.
+- Sets explicitly permit repeated suits (rules: "3♣ 3♣ 3♦ is valid"), and the
+  deck holds TWO of every card — so a repeated suit is never illegal.
+
+What the bad fix broke: reserving declared wild suits made `valMeld` reject
+`Q♥ Q♦ + joker(Q♣) + deuce` — a legal 4-card set (2 naturals, 2 wilds) — with
+"No valid suit left for the wild in this set."
+
+Corrected behaviour:
+- **Deuce in a set** now records the RANK ONLY (`declaredAs='7'`), with no
+  meaningless suit. Scoring verified unchanged (5 for a 7-set, 10 for Queens).
+- **Joker in a set** still gets a concrete card (redemption needs it), but an
+  unused suit is now only a *preference* — it falls back to a repeated suit
+  rather than failing. Q♠ remains the sole forbidden choice.
+- Same fallback added to the tappable picker.
+- Consequence: `Q♥ Q♦ Q♣ + joker` is now VALID with the joker as Q♥. This is
+  correct; an earlier test asserting it should be rejected was itself wrong.
+
+---
+
+## Resolved — meld dialog cleanup (2026-08-08-12)
+
+- **Deuce in a SET no longer asks what it stands for.** In a set the rank is
+  already fixed and a deuce is never redeemed, so the suit choice changed
+  nothing — the prompt asked the player to decide something meaningless.
+  `wildAssignmentOptions()`'s set branch now only enumerates for JOKERS
+  (which do need a declaration, since a redeemer must produce that exact
+  card). Deuces fall through to `valMeld(...,true)`'s silent auto-assignment.
+  Preserved: joker-in-set still prompts, deuce-in-RUN still prompts (its rank
+  genuinely varies), and a mixed joker+deuce set asks only about the joker.
+  (An earlier note here claimed a "suit collision" was also fixed. That was
+  wrong and is corrected in the 2026-08-08-13 entry above.)
+- **"Add to meld" now lists only melds the cards can legally join.** It used
+  to render every meld, with rejected ones showing a red ✗ and a reason, so
+  the dialog filled with unusable options. Now filtered to targets where
+  `v.valid && v.type===m.type` (matching what `confirmAdd` enforces). When
+  nothing qualifies it shows a single clear message instead of an empty
+  dialog.
+- **The add dialog gained the wild picker** the create-meld dialog got in
+  2026-08-08-6. Adding a wild to an existing run is genuinely ambiguous (it
+  can extend either end); the dialog now shows tappable options per meld when
+  more than one placement is legal, and `confirmAdd` applies the choice.
+
+---
+
+## Resolved — CPU turn summary gaps (2026-08-08-11)
+
+- **Melds were missing from the CPU turn summary.** Only 2 of 8 CPU meld
+  sites called `cpuLog()` — the two in `cpuMeldAsync`. Everything else was
+  silent: the synchronous `cpuMeld()` (which is what runs on the opening
+  hand), all four pile-pickup meld paths in `cpuDraw()`, and the gambler's
+  bagel lay-down. So the summary reported drawing, calling and discarding but
+  never what was actually played to the table. All sites now log, including
+  add-to-existing-meld.
+- **The opening turn was invisible.** `cpuAfterDiscard()` explicitly excluded
+  `phase==='first-discard'` from the acknowledgement pause, so when a CPU
+  held the 14-card opening hand it melded and discarded silently before the
+  human's first look at the table — no summary, no Continue. It now pauses
+  like any other CPU turn. (The exclusion originally guarded against a hang;
+  the stall watchdog added in 2026-08-08-2 now covers that risk.)
+- **The opening turn also reset its log too late.** `runCPUInstant()`
+  returned into the first-discard branch *before* reaching `cpuLogReset()`,
+  so that turn either logged nothing or carried stale entries from a previous
+  turn. Reset now happens first.
+
+---
+
 ## Resolved — hand arrangement & pile-pickup ordering (2026-08-08-9)
 
 - **Pile pickup listed your naturals in the wrong order** — `startPickup()`

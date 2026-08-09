@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-9 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-08-13 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-9</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-13</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -601,6 +601,9 @@ const PERSONAS={
     riskAversion:0.35,blockAwareness:0.45,callDiscipline:0.75,
     temperature:1.30,memDepth:12,memRetention:0.85,memCorruption:0.20},
 };
+// Picking up a discard pile LARGER than this may let you go out without a
+// prior call (you couldn't have anticipated the cards). 2 means a pile of 3+.
+const PILE_GOOUT_MIN=2;
 const DEFAULT_PERSONA={style:'grinder',meldEagerness:0.75,bagelAmbition:0.25,pileGreed:0.50,
   riskAversion:0.55,blockAwareness:0.50,callDiscipline:0.85,
   temperature:0.50,memDepth:12,memRetention:0.90,memCorruption:0.15};
@@ -1763,6 +1766,7 @@ function puStep2(){
 
 function confirmPickup(){
   const cp=G.players[G.currentIdx],all=[...G.discardPile];
+  G.pickedUpCount=G.discardPile.length;
   G.discardPile=[];all.forEach(c=>cp.hand.push(c));
   if(cp.handOrder) all.forEach(c=>cp.handOrder.push(c.id));
   G.drewCard=true;G.phase='play';
@@ -1826,13 +1830,22 @@ function wildAssignmentOptions(sel){
     const nat=sel.filter(c=>!c.wild);
     if(!nat.length) return [];
     if(trySet(sel)){
-      // Set: rank is fixed; only the suit varies (and never Q♠).
+      // Set: the rank is already fixed by the set, so only the suit could
+      // vary — and for a DEUCE that choice is meaningless. A deuce is never
+      // redeemed, and it scores by the rank it stands in for, which is fixed
+      // here. Only a JOKER needs a declaration in a set, because a redeemer
+      // must later produce that exact card. So don't ask about deuces.
+      const needing=wilds.filter(w=>w.joker);
+      if(!needing.length) return [];   // deuces only → nothing to ask
       const rank=nat[0].rank;
       const used=new Set(nat.map(c=>c.suit));
-      const avail=SUITS.filter(su=>!used.has(su)&&!(rank==='Q'&&su==='♠'));
+      // Offer unused suits first; if none remain, fall back to the repeated
+      // ones (the deck has two of every card, and sets allow duplicate suits).
+      let avail=SUITS.filter(su=>!used.has(su)&&!(rank==='Q'&&su==='♠'));
+      if(!avail.length) avail=SUITS.filter(su=>!(rank==='Q'&&su==='♠'));
       const pick=(remaining,chosen)=>{
-        if(chosen.length===wilds.length){
-          opts.push({assignments:wilds.map((w,i)=>({id:w.id,decl:rank+chosen[i]}))});
+        if(chosen.length===needing.length){
+          opts.push({assignments:needing.map((w,i)=>({id:w.id,decl:rank+chosen[i]}))});
           return;
         }
         remaining.forEach((su,i)=>pick(remaining.filter((_,j)=>j!==i),[...chosen,su]));
@@ -2000,6 +2013,10 @@ function valMeld(cards,assign=false){
     // (e.g. a human picked a suit for a Joker via the meld dialog), keep it.
     const setRank=nat[0].rank;
     const usedSuits=new Set(nat.map(c=>c.suit));
+    // Prefer an unused suit for readability, but note the deck holds TWO of
+    // every card, and sets explicitly permit repeated suits (3♣ 3♣ 3♦ is
+    // legal) — so a used suit is a fallback, never a reason to reject.
+    wld.forEach(w=>{if(w.joker&&w.declaredAs) usedSuits.add(w.declaredAs.slice(-1));});
     // A wild may NEVER stand in for the Queen of Spades (rules: "A wild
     // cannot substitute for the Queen of Spades", "A joker may never be
     // declared as Q♠"). In a set of Queens the naive "first unused suit"
@@ -2010,10 +2027,19 @@ function valMeld(cards,assign=false){
       return{valid:false,msg:'A wild cannot represent the Queen of Spades.'};
     for(const w of wld){
       if(w.declaredAs) continue;
-      const availSuit=SUITS.find(s=>!usedSuits.has(s)&&!isQSpades(setRank,s));
-      if(!availSuit)
-        return{valid:false,msg:'No valid suit left for the wild in this set (a wild cannot be the Queen of Spades).'};
-      usedSuits.add(availSuit); // reserve it either way so validity is consistent
+      if(!w.joker){
+        // A DEUCE in a set needs no suit at all. It has none of its own, it's
+        // never redeemed, and scoring reads only the rank (a deuce in a set
+        // of 7s scores as a 7 regardless). Record the rank alone.
+        if(assign) w.declaredAs=setRank;
+        continue;
+      }
+      // A JOKER does need a concrete card, since a redeemer must produce
+      // exactly it. Q♠ is the only forbidden choice.
+      const availSuit=SUITS.find(su=>!usedSuits.has(su)&&!isQSpades(setRank,su))
+                   || SUITS.find(su=>!isQSpades(setRank,su));
+      if(!availSuit) return{valid:false,msg:'A wild cannot represent the Queen of Spades.'};
+      usedSuits.add(availSuit);
       if(assign) w.declaredAs=setRank+availSuit;
     }
     return{valid:true,type:'set'};
@@ -2128,20 +2154,82 @@ function tryRun(cards){
   return false;
 }
 
+// Per-meld wild options for the add dialog, keyed by meld index.
+let _addWildOpts={},_addWildIdx={};
+
+function selectAddWildOption(mi,i){ _addWildIdx[mi]=i; renderAddOptions(); }
+
+function renderAddOptions(){
+  const cp=G.players[G.currentIdx];
+  const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
+  // Only offer melds these cards can LEGALLY join — listing the rest just
+  // fills the dialog with options the player can't act on.
+  const legal=[];
+  cp.melds.forEach((m,mi)=>{
+    const v=valMeld([...m.cards,...sel]);
+    if(v.valid&&v.type===m.type) legal.push({m,mi});
+  });
+  const box=document.getElementById('add-opts');
+  if(!legal.length){
+    box.innerHTML=`<div style="padding:14px;background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;font-size:13px;color:#8a2b2b;">
+      These cards can't be added to any of your melds.<br>
+      <span style="font-size:12px;color:#a15c5c;">You may still be able to play them as a new meld.</span></div>`;
+    return;
+  }
+  box.innerHTML=legal.map(({m,mi})=>{
+    const opts=_addWildOpts[mi]||[];
+    const idx=_addWildIdx[mi]||0;
+    let picker='';
+    if(opts.length>1){
+      picker=`<div style="margin-top:8px;">
+        <div style="font-size:11px;color:#666;margin-bottom:4px;">Your wild can go in more than one place — pick one:</div>
+        ${opts.map((o,i)=>{
+          const on=i===idx;
+          const cards=o.assignments.map(a=>{
+            const red=a.decl.includes('♥')||a.decl.includes('♦');
+            return `<span style="display:inline-block;background:#fff;border:1px solid rgba(0,0,0,.2);border-radius:5px;padding:2px 7px;margin:0 3px;font-weight:700;color:${red?'#c0392b':'#222'};">${a.decl}</span>`;
+          }).join('');
+          return `<button onclick="selectAddWildOption(${mi},${i})" style="display:inline-block;margin:0 4px 4px 0;padding:5px 8px;border-radius:7px;cursor:pointer;
+            border:2px solid ${on?'#2E4057':'rgba(0,0,0,.15)'};background:${on?'#e8eef5':'#fff'};">${on?'✓':''}${cards}</button>`;
+        }).join('')}
+      </div>`;
+    }
+    return`<div style="margin-bottom:0.75rem;padding:10px;background:#f0f0ec;border-radius:8px;">
+      <div style="font-size:11px;color:#666;margin-bottom:6px;">Meld ${mi+1} (${m.type}) — ${mPts(m)}pts</div>
+      <div class="flex gap-8 wrap center" style="gap:6px;">${m.cards.map(c=>rc(c,false,null,true)).join('')}<span style="color:#666;">+</span>${sel.map(c=>rc(c,false,null,true)).join('')}</div>
+      ${picker}
+      <button class="btn small primary" style="margin-top:8px;" onclick="confirmAdd(${mi})">Add here</button>
+    </div>`;
+  }).join('');
+}
+
 function openAdd(){
   if(!isHumanTurn()) return;
   const cp=G.players[G.currentIdx];
   const sel=G.sel.map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
   if(!sel.length){setWarn('Select cards to add.');return;}
-  document.getElementById('add-opts').innerHTML=cp.melds.map((m,mi)=>{
-    const combo=[...m.cards,...sel],v=valMeld(combo);
-    return`<div style="margin-bottom:0.75rem;padding:10px;background:#f0f0ec;border-radius:8px;">
-      <div style="font-size:11px;color:#666;margin-bottom:6px;">Meld ${mi+1} (${m.type}) — ${mPts(m)}pts</div>
-      <div class="flex gap-8 wrap center" style="gap:6px;">${m.cards.map(c=>rc(c,false,null,true)).join('')}<span style="color:#666;">+</span>${sel.map(c=>rc(c,false,null,true)).join('')}</div>
-      ${v.valid?`<button class="btn small primary" style="margin-top:8px;" onclick="confirmAdd(${mi})">Add here</button>`:`<div style="font-size:12px;color:#c0392b;margin-top:4px;">✗ ${v.msg}</div>`}
-    </div>`;
-  }).join('');
+  // Work out, per meld, where a selected wild could legally land — same
+  // tappable treatment the create-meld dialog uses.
+  _addWildOpts={};_addWildIdx={};
+  cp.melds.forEach((m,mi)=>{
+    const combo=[...m.cards,...sel];
+    const v=valMeld(combo);
+    if(!(v.valid&&v.type===m.type)) return;
+    const all=wildAssignmentOptions(combo);
+    const selIds=new Set(sel.filter(c=>c.wild).map(c=>c.id));
+    if(!selIds.size) return;
+    // Only the wilds being added are the player's to decide about here.
+    const seen=new Set();const trimmed=[];
+    all.forEach(o=>{
+      const a=o.assignments.filter(x=>selIds.has(x.id));
+      if(!a.length) return;
+      const k=a.map(x=>x.id+':'+x.decl).join('|');
+      if(seen.has(k)) return; seen.add(k); trimmed.push({assignments:a});
+    });
+    if(trimmed.length) _addWildOpts[mi]=trimmed;
+  });
   document.getElementById('add-err').textContent='';
+  renderAddOptions();
   document.getElementById('m-add').style.display='flex';
 }
 
@@ -2162,7 +2250,15 @@ function confirmAdd(mi){
     document.getElementById('add-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
     return;
   }
-  if(!commitAddToMeld(em,sel)){document.getElementById('add-err').textContent='Not a valid meld.';return;}
+  // Apply the wild placement the player tapped, if any.
+  const chosenAdd=(_addWildOpts[mi]||[])[_addWildIdx[mi]||0];
+  if(chosenAdd) chosenAdd.assignments.forEach(a=>{
+    const card=sel.find(c=>c.id===a.id); if(card) card.declaredAs=a.decl;
+  });
+  if(!commitAddToMeld(em,sel)){
+    if(chosenAdd) sel.forEach(c=>{if(c.wild)c.declaredAs=null;});
+    document.getElementById('add-err').textContent='Not a valid meld.';return;
+  }
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
   if(G.redeemMustMeld&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.redeemMustMeld=false;}
@@ -2237,18 +2333,31 @@ function doDiscard(){
     cp.missedDeclaration=true;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
-  if(goOut&&cp.calledThisTurn){
-    setWarn('You cannot go out on the same turn you called — your call takes effect next turn.');
-    cp.calledThisTurn=false;
-    autoDecl();endTurnHO();return;
+  if(goOut){
+    const gate=canGoOut(cp);
+    if(!gate.ok){
+      setWarn(gate.msg);
+      cp.calledThisTurn=false;cp.missedDeclaration=false;
+      autoDecl();endTurnHO();return;
+    }
+    cp.missedDeclaration=false;endHand(G.currentIdx);return;
   }
-  if(goOut&&cp.missedDeclaration){
-    setWarn('⚠ You must call cards before going out. You had ≤3 cards at end of a previous turn and did not call. Your discard stands but you cannot go out this turn.');
-    cp.missedDeclaration=false;
-    autoDecl();endTurnHO();return;
-  }
-  if(goOut){cp.missedDeclaration=false;endHand(G.currentIdx);return;}
   autoDecl();endTurnHO();
+}
+
+// Whether this player is allowed to go out on THIS discard.
+// Going out now requires a call made on an EARLIER turn — the old code only
+// blocked players who had tripped shouldCall() and ignored it, so someone who
+// melted from 6 cards straight to 0 could go out having never called at all.
+// Exceptions, both from the rules:
+//   • Bagel/Dream — nothing melded before this turn, so calling never applied.
+//   • Pile pickup — took a pile big enough to go out from unexpectedly.
+function canGoOut(cp){
+  if(!cp.hadMeldsAtTurnStart) return {ok:true,why:'bagel/dream'};
+  if((G.pickedUpCount||0)>PILE_GOOUT_MIN) return {ok:true,why:'pile pickup'};
+  if(cp.calledThisTurn) return {ok:false,msg:'You cannot go out on the same turn you called — your call takes effect next turn.'};
+  if(cp.declared) return {ok:true,why:'called earlier'};
+  return {ok:false,msg:'⚠ You must call cards on an earlier turn before going out. Your discard stands, but you cannot go out this turn.'};
 }
 
 function autoDecl(){
@@ -2286,6 +2395,9 @@ function canBagelCached(cp){
 function shouldCall(cp){
   if(!cp.hasEverMelded) return false; // bagel/dream exception
   if(cp.declared) return false; // already called
+  // Calling 0 isn't a thing — with 1 card left you're either going out on a
+  // call made earlier, or you're not going out at all.
+  if(cp.hand.length-1<1) return false;
   // Condition 1: ≤3 cards after discarding
   if(cp.hand.length-1<=3) return true;
   // Condition 2: a single drawn card could complete the hand
@@ -2298,15 +2410,29 @@ function shouldCall(cp){
 function openDeclare(){
   const cp=G.players[G.currentIdx];
   const afterDiscard=cp.hand.length-1;
-  document.getElementById('decl-desc').textContent=`You have ${cp.hand.length} cards. After discarding you'll have ${afterDiscard}. How many are you calling?`;
-  const sel=document.getElementById('decl-sel');sel.innerHTML='';
-  for(let i=1;i<=cp.hand.length;i++){const o=document.createElement('option');o.value=i;o.textContent=`${i} card${i>1?'s':''}`;if(i===afterDiscard)o.selected=true;sel.appendChild(o);}
+  // The count is never a choice — it is always what you'll hold after
+  // discarding — so this is a confirmation, not a question.
+  if(afterDiscard<1){
+    setWarn('You cannot call 0 cards. To go out you must have called on an earlier turn.');
+    return;
+  }
+  document.getElementById('decl-desc').innerHTML=
+    `You hold ${cp.hand.length} cards, so after discarding you'll have <strong>${afterDiscard}</strong>.<br>
+     Call ${afterDiscard} card${afterDiscard!==1?'s':''}?
+     <span style="display:block;margin-top:6px;font-size:12px;color:#666;">Takes effect next turn — you can't go out on the turn you call.</span>`;
+  const sel=document.getElementById('decl-sel');
+  sel.innerHTML=`<option value="${afterDiscard}" selected>${afterDiscard} card${afterDiscard!==1?'s':''}</option>`;
+  sel.style.display='none'; // retained so confirmDecl keeps reading one place
   document.getElementById('m-decl').style.display='flex';
 }
 function confirmDecl(){
   const cp=G.players[G.currentIdx];
+  const afterDiscard=cp.hand.length-1;
+  if(afterDiscard<1){
+    setWarn('You cannot call 0 cards.');cm('m-decl');return;
+  }
   cp.declared=true;
-  cp.declaredCount=+document.getElementById('decl-sel').value;
+  cp.declaredCount=afterDiscard;
   cp.calledThisTurn=true;
   cp.missedDeclaration=false;
   // Queue notification for other players + show immediate modal
@@ -2321,8 +2447,8 @@ function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.dec
 function runCPUInstant(){
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
-  if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
   cpuLogReset();
+  if(G.phase==='first-discard'){cpuMeld(cp);cpuDiscard(cp);return;}
   if(isBagelChasing(cp)){
     gamblerDraw(cp);
     gamblerDiscard(cp);
@@ -2511,6 +2637,7 @@ function cpuDraw(cp){
       // Execute pickup
       const pileCards=[...G.discardPile];
       cpuLog(`picked up the discard pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
+      G.pickedUpCount=G.discardPile.length;
       G.discardPile=[];
       pileCards.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pileCards.forEach(c=>cp.handOrder.push(c.id));
@@ -2528,17 +2655,20 @@ function cpuDraw(cp){
           const meldIdx=cp.melds.findIndex(m=>m.cards.some(c=>meldFromTable.some(t=>t.id===c.id)));
           if(meldIdx>=0){
             if(commitAddToMeld(cp.melds[meldIdx],meldFromHand)){
+              cpuLog(`added ${cpuLogCards(meldFromHand)} to an existing meld`);
               committedHandCards=meldFromHand;
             } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
+              cpuLog(`melded ${cpuLogCards(meldFromHand)}`);
               committedHandCards=meldFromHand;
             }
             // else: cannot validly commit these hand cards anywhere — leave them
             // in hand rather than forcing an invalid merge onto the existing meld.
           } else if(meldFromHand.length>=3&&commitNewMeld(cp,meldFromHand)){
+            cpuLog(`melded ${cpuLogCards(meldFromHand)}`);
             committedHandCards=meldFromHand;
           }
         } else {
-          if(commitNewMeld(cp,bestMeld)) committedHandCards=meldFromHand;
+          if(commitNewMeld(cp,bestMeld)){cpuLog(`melded ${cpuLogCards(bestMeld)}`);committedHandCards=meldFromHand;}
         }
         committedHandCards.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
@@ -2573,6 +2703,7 @@ function cpuMeld(cp){
           });
         }
         pushMeld(cp,meld,v.type);
+        cpuLog(`melded ${cpuLogCards(meld)}`);
         meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         const djk3=meld.filter(c=>c.joker&&c.declaredAs);if(djk3.length)addJokerNotification(cp.name,djk3);
@@ -2586,6 +2717,7 @@ function cpuMeld(cp){
         if(commitAddToMeld(existingMeld,[card])){
           cp.hand=cp.hand.filter(h=>h.id!==card.id);
           if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
+          cpuLog(`added ${cLbl(card)} to a meld`);
           melded=true;
           break;
         }
@@ -2765,6 +2897,7 @@ function gamblerDraw(cp){
       // Pick up the pile — bagel is possible!
       const pile=[...G.discardPile];
       cpuLog(`picked up the discard pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
+      G.pickedUpCount=G.discardPile.length;
       G.discardPile=[];
       pile.forEach(c=>cp.hand.push(c));
       if(cp.handOrder) pile.forEach(c=>cp.handOrder.push(c.id));
@@ -2808,6 +2941,7 @@ function gamblerDiscard(cp){
           if(v.valid){
             if(v.type==='run'){const rr=tryRun(combo);if(rr&&rr.assignedRanks)rr.assignedRanks.forEach(({card,rank})=>{if(card.wild){const rn=Object.keys(RO).find(k=>RO[k]===rank)||String(rank);card.declaredAs=rn+(rr.suit||'');}});}
             pushMeld(cp,combo,v.type);
+            cpuLog(`melded ${cpuLogCards(combo)}`);
             combo.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
             if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
             remaining=remaining.filter(c=>!combo.includes(c));
@@ -2843,7 +2977,14 @@ function cpuDoDiscard(cp,card,goOut){
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
   cpuLog(`discarded ${cLbl(card)}`);
-  if(goOut){endHand(G.currentIdx);return;}
+  if(goOut){
+    // CPUs are bound by the same calling requirement as human players.
+    const gate=canGoOut(cp);
+    if(gate.ok){endHand(G.currentIdx);return;}
+    cpuLog('could not go out (had not called)');
+    cp.calledThisTurn=false;cp.missedDeclaration=false;
+    autoDecl();updateGame();cpuAfterDiscard();return;
+  }
   autoDecl(); // correct a stale call if this CPU melded further than its earlier call anticipated
   if(shouldCall(cp))cp.missedDeclaration=true;
   updateGame();cpuAfterDiscard();
@@ -2851,12 +2992,16 @@ function cpuDoDiscard(cp,card,goOut){
 
 function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
-  if(G.singleHumanMode&&G.phase!=='first-discard'){
+  // The opening turn used to be exempt from the acknowledgement, so when a
+  // CPU held the 14-card opening hand the human never saw what it did — it
+  // just silently melded and discarded before their first look at the table.
+  // It now pauses like any other CPU turn.
+  if(G.singleHumanMode){
     const name=G.players[G.currentIdx].name;
     G.awaitingCPUAck=true;
     setCPUAction(`🤖 ${name} discarded`);
     updateGame();
-  } else if(G.allCPUMode||G.phase==='first-discard'){
+  } else if(G.allCPUMode){
     setTimeout(()=>endTurnHO(),speed*2);
   } else {
     setTimeout(()=>endTurnHO(),speed);
@@ -2919,6 +3064,7 @@ function ackCPUDiscard(){
 
 function endTurnHO(){
   noteProgress();
+  G.pickedUpCount=0; // pile-pickup go-out exception applies only to the turn it happened
   G.awaitingCPUAck=false;
   const cp=G.players[G.currentIdx];
   cp.turnCount++;

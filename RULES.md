@@ -55,11 +55,18 @@ The player who went out deals the next hand. If a hand is dead (draw pile runs o
 
 ---
 
+## Terminology
+
+- **The pile** — the discard pile. "Picking up the pile" always means taking the whole discard pile.
+- **A fresh card** — a card taken from the deck (also called the *stack*): the face-down undealt cards.
+
+---
+
 ## Turn Structure
 
 Each turn follows this sequence:
 
-1. **Draw** — draw from the deck or pick up the entire discard pile (see Pile Pickup rules).
+1. **Draw** — take a **fresh card** from the deck, or pick up the entire **pile** (the discard pile — see Pile Pickup rules).
 2. **Redeem Jokers** — optionally redeem a Joker from one of your own melds (see Joker Redemption).
 3. **Meld / Add to Melds** — play cards to the table.
 4. **Discard** — you must always end your turn with a discard, including when going out.
@@ -121,13 +128,17 @@ Once you have melded at least once, you must **call** (announce how many cards y
 
 **Calling is always the player's responsibility** — it is never automatic. Failure to call when required means you cannot go out on your next turn (your discard still stands, but going out is blocked).
 
+You do not choose a number — the call is always **one fewer than the cards in your hand**, since you are about to discard one. Calling is simply announcing that fact out loud.
+
 Additional rules:
 
-- You must call **just before discarding** — not earlier in your turn.
+- You must call **just before discarding**, at the end of your turn — not earlier.
 - Your call **takes effect next turn** — you cannot go out on the same turn you called.
+- **You cannot call 0.** With one card left you are either going out on a call made earlier, or not going out at all.
+- **You cannot go out without having called on an earlier turn** (subject to the exceptions below). This applies however you arrived at an empty hand.
 - You must uncall if your situation changes and you no longer meet either condition.
 - **Exception:** If you have not yet melded anything, calling rules do not apply — this protects Bagel and Dream hands.
-- **Exception:** If you pick up the discard pile and it contains multiple cards that allow you to go out immediately, you may do so without a prior call.
+- **Exception:** If you pick up a discard pile of **more than 2 cards** and it lets you go out immediately, you may do so without a prior call — you could not reasonably have anticipated those cards. A pile of 1 or 2 cards does *not* qualify.
 
 ---
 
@@ -221,8 +232,8 @@ The highest scorer (after all bonuses) collects from each other player individua
 
 ## Quick Reference: Turn Checklist
 
-1. Draw from deck **OR** pick up entire discard pile (must immediately meld top card with 2 naturals).
+1. Take a fresh card from the deck **OR** pick up the entire pile (must immediately meld top card with 2 naturals).
 2. Optionally redeem a Joker from your own meld(s) — no requirement to meld it right away.
 3. Meld and/or add to your own melds.
-4. Call if required: ≤3 cards after discard, or one draw could take you out. Only after first meld. Your responsibility — never automatic.
+4. Call if required: ≤3 cards after discard, or one draw could take you out. Only after your first meld. The number is always your hand minus the discard — you just confirm it. Your responsibility, never automatic, and you can't go out without having called on an earlier turn.
 5. Discard one card (mandatory, even when going out).

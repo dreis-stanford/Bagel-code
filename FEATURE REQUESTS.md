@@ -58,6 +58,49 @@ Passover. Pieces to design/build:
 *Awaiting user's specific sayings, trigger circumstances, and confirmation
 on deck scope before implementation.*
 
+### 4. UI redesign — make it look like a real card game (DEFERRED)
+
+Current UI is functional but clunky and doesn't read as a card game. Decision
+deliberately deferred; options preserved below so we can pick one up later.
+
+**The core difficulty is melds, not seating.** A round table works well for
+≤4 players and gets awkward at 5 — but melds are what actually breaks table
+layouts at any player count: they grow unboundedly, and a player with five
+melds needs far more room than a fixed seat can give.
+
+**Option A — Seats + shared meld area.** Players around the edge showing only
+name, card count, status. ALL melds live in a central zone, colour-coded or
+badged by owner. Handles 5 players cleanly and scales with meld count.
+Trade-off: loses the immediate visual "these are *her* melds" grouping.
+
+**Option B — Seats with expandable melds.** Each seat shows a compact summary
+("3 melds, 85 pts") that expands on tap. Keeps ownership obvious and the
+table tidy; costs a tap to inspect an opponent.
+
+**Option C — Focus view.** Your hand and melds prominent at the bottom;
+opponents a compact strip you tap to bring into focus. Least "card table"-ish,
+but most robust on a small screen and least likely to break at 5 players.
+
+**Recommended method: a separate FORK, not an option flag.** A real layout
+change touches nearly every render path; maintaining two layouts behind a
+toggle would roughly double the surface area for exactly the class of bug
+we've spent this project chasing. Fork it, play both, keep the winner.
+
+**Recommended timing: AFTER the CPU memory model (item 3).** The CPU work is
+confined to decision logic and won't conflict with layout. Doing an AI change
+and a UI rewrite simultaneously would make regressions hard to attribute.
+
+**QUESTION TO ASK THE USER BEFORE STARTING:** is the primary device the iPad,
+or should this also work well on a phone? That one answer eliminates roughly
+half the design space (notably, Option C becomes much more attractive if
+phone matters; Options A/B are more natural if it's iPad-first).
+
+Related smaller item: the in-game UI still says "Draw" / "Draw pile" rather
+than the "fresh card" / "deck (stack)" vocabulary standardised in RULES.md.
+Worth folding into whichever redesign happens.
+
+---
+
 ### 3. Refine CPU strategy realism + add more CPU player types
 
 **STAGE 1 SHIPPED (build 2026-08-08-3)** — scoring/selection framework +
