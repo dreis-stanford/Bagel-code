@@ -111,6 +111,45 @@ after the fact from a static snapshot.
 
 ---
 
+## Resolved — regression from the previous fix: humans couldn't discard (2026-08-09-11)
+
+**The 2026-08-09-10 guard broke ordinary play.** It re-armed `G._turnEnded`
+only inside `runCPUInstant`/`runCPUTurn` — but a HUMAN's turn never runs
+through either of those. So the very first CPU-to-human handoff left the
+guard permanently latched from the CPU's turn, and every subsequent
+`endTurnHO()` call the human made (i.e., every discard) was silently
+blocked: the discard itself still happened (nothing gated that part), but
+the turn never advanced, so clicking discard repeatedly kept discarding
+extra cards with no visible error. This is also why the Summary
+button/last-turn panel vanished — both live inside `renderLastTurn()`,
+populated by `flushTurnLog()`, which lives inside the same blocked
+`endTurnHO()` call.
+
+**Fix:** re-arm the guard unconditionally, immediately after `currentIdx`
+advances inside `endTurnHO()` itself — i.e., revert to the SIMPLE approach,
+which works correctly for every player type including humans. This does
+mean the boolean guard is no longer airtight against a genuinely
+back-to-back SAME-TICK duplicate call (verified: two synchronous calls in a
+row without any real turn processing between them will still both succeed).
+That tradeoff is acceptable because it isn't actually needed: the diagnosed
+race requires the watchdog to fire ASYNCHRONOUSLY after being blocked by a
+long computation, and the true fix for that — `noteProgress()` firing at the
+exact moment of discard, added in the previous build — already prevents the
+watchdog from attempting a call at all once it finally gets to run, since it
+sees freshly-updated progress. Directly verified: given a discard timestamp
+that's fresh (as it now always will be), the watchdog's own logic produces
+ZERO stall-log entries and takes no action; with the OLD (unfixed) stale
+timing it correctly reproduces the original false trigger. So the two
+defenses divide responsibility cleanly — noteProgress prevents the real
+async race, the boolean guard is a lightweight backstop that no longer needs
+to (and doesn't) survive a contrived same-tick double-call.
+
+Lesson for next time noted in CONTEXT.md: a "defense in depth" fix that
+changes normal-path behavior needs the normal path tested just as
+rigorously as the bug path before shipping.
+
+---
+
 ## Resolved — CPU turn freeze fully diagnosed: root cause found (2026-08-09-10)
 
 **The round summary evidence (Poppy, Everything, Garlic each appearing

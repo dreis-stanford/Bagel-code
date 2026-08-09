@@ -124,6 +124,17 @@ Distinctive to Bagel, among others:
 - Pile pickup requires immediately melding the top card with 2 naturals.
 - Sets are capped at 4; aces are high only.
 
+## When adding a defensive guard, test the NORMAL path too
+
+Build 2026-08-09-10 added a guard against a diagnosed CPU-turn race, but only
+re-armed it inside the CPU-turn-driver functions — breaking ordinary human
+discards entirely (silently: the turn just never advanced, with no error).
+The test suite for that change only exercised the bug scenario, not everyday
+play, so the regression shipped. Fixed in 2026-08-09-11. When a change alters
+shared control flow (turn advancement, state transitions), verify BOTH the
+failure case the fix targets AND a normal successful run through the same
+code, before considering it done.
+
 ## CPU strategy weights are HEURISTICS, not rules
 
 The persona weights and the scoring adjustments (two-card-trap penalty,
