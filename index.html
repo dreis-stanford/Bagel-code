@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-7 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-9 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-7</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-9</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -834,7 +834,7 @@ function restoreSnapshot(snap){
 
 function dealHand(){
   G.snapshot=snapshotPlayers(); // save state before this hand
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;rollBagelIntent(p);});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;p._discardedThisTurn=false;rollBagelIntent(p);});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.pendingSummary=[];G.lastTurn=null;G.cpuTurnLog=[];G._pendingEndHand=null;
   G.savedDeck=null; // will be saved after cut
@@ -2441,12 +2441,17 @@ function autoDecl(){
   // silently reset and then immediately re-declared (and re-announced) on
   // every single turn even when nothing had actually changed.
   if(cp.declared&&cp.hand.length>(cp.declaredCount||99)+1){cp.declared=false;cp.declaredCount=null;}
-  // If CPU melded further after calling, update count downward to match current hand
-  if(cp.declared&&cp.type&&cp.type!=='human'&&cp.hand.length<(cp.declaredCount||99)){
-    const newCount=cp.hand.length-1;
-    if(newCount>=1){
-      cp.declaredCount=newCount;
-      announceEvent(`📣 ${cp.name} updated call to ${newCount} card${newCount!==1?'s':''}`);
+  // Keep the call honest. A call always means "this many AFTER I discard", so
+  // the correct value at any point in the turn is hand.length-1. The old test
+  // compared hand.length against declaredCount, which is off by one: a player
+  // who called 3, then next turn drew to 4 and melded one card back to 3,
+  // would sit at hand.length===declaredCount and never update — yet after
+  // discarding they hold 2, not the 3 they are still advertising.
+  if(cp.declared){
+    const should=cp.hand.length-1;
+    if(should>=1&&should<cp.declaredCount){
+      cp.declaredCount=should;
+      announceEvent(`📣 ${cp.name} updated call to ${should} card${should!==1?'s':''}`);
     }
   }
 }
@@ -2541,7 +2546,7 @@ function runCPUTurn(){
 
   if(G.phase==='first-discard'){
     setCPUAction(`🤖 ${cp.name} is playing opening turn...`);
-    setTimeout(()=>{if(alive())cpuMeldAsync(cp,speed,()=>{if(alive())cpuDiscard(cp);});},speed);
+    setTimeout(()=>{if(alive())cpuMeldAsync(cp,speed,()=>{if(alive())cpuDiscard(cp);},turnId);},speed);
     return;
   }
 
@@ -2568,7 +2573,10 @@ function runCPUTurn(){
   },speed);
 }
 
-function cpuMeldAsync(cp,speed,onDone){
+function cpuMeldAsync(cp,speed,onDone,turnId){
+  // If this chain belongs to a superseded turn, drop it silently rather than
+  // letting it run actions against the current player's state.
+  if(turnId!==undefined&&turnId!==G.cpuTurnId) return;
   if(G.players[G.currentIdx]!==cp){onDone();return;}
   const meld=cpuFindOneMeld(cp);
   if(meld){
@@ -2584,7 +2592,7 @@ function cpuMeldAsync(cp,speed,onDone){
       const djk=meld.filter(c=>c.joker&&c.declaredAs);
       if(djk.length) addJokerNotification(cp.name,djk);
       updateGame();
-      setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
+      setTimeout(()=>cpuMeldAsync(cp,speed,onDone,turnId),speed);return;
     } else {
       // cpuFindOneMeld proposed something commitNewMeld won't accept. Do NOT
       // retry the same search (it would return the same combo forever and
@@ -2599,7 +2607,7 @@ function cpuMeldAsync(cp,speed,onDone){
         if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         cpuLog(`added ${cLbl(card)} to a meld`);
         updateGame();
-        setTimeout(()=>cpuMeldAsync(cp,speed,onDone),speed);return;
+        setTimeout(()=>cpuMeldAsync(cp,speed,onDone,turnId),speed);return;
       }
     }
   }
@@ -3143,6 +3151,15 @@ function gamblerDiscard(cp){
 // ─────────────────────────────────────────────────────────────────
 
 function cpuDoDiscard(cp,card,goOut){
+  // Guard against a turn being driven twice (e.g. the stall watchdog
+  // restarting a turn whose async chain was merely slow, not dead). Without
+  // this, a recovered turn could discard a second time, which looked like
+  // other players' turns being skipped.
+  if(cp._discardedThisTurn){
+    console.warn('cpuDoDiscard: ignoring duplicate discard for',cp.name);
+    return;
+  }
+  cp._discardedThisTurn=true;
   if(!card){
     // No card to discard — shouldn't happen, but handle gracefully
     console.warn('cpuDoDiscard called with no card');
@@ -3202,13 +3219,29 @@ function cpuWatchdogTick(){
 
     G.stallLog=(G.stallLog||[]);
     G.stallLog.push({at:new Date().toISOString(),kind:'cpu-turn-stalled',player:cp.name,type:cp.type,
-      phase:G.phase,idleMs:idle,hand:cp.hand.length,drew:!!G.drewCard,cpuTurnId:G.cpuTurnId});
-    console.warn('CPU watchdog: CPU turn stalled — restarting it.',G.stallLog[G.stallLog.length-1]);
+      phase:G.phase,idleMs:idle,hand:cp.hand.length,drew:!!G.drewCard,cpuTurnId:G.cpuTurnId,
+      discarded:!!cp._discardedThisTurn,melds:cp.melds.length,bagel:!!cp._goingForBagel});
+    console.warn('CPU watchdog: CPU turn stalled.',G.stallLog[G.stallLog.length-1]);
     noteProgress();
-    // First try re-driving the same turn; if it was already mid-discard the
-    // turn will simply complete. cpuTurnId increments, invalidating any
-    // stale callback that might still fire later.
-    runCPUTurn();
+    // Recover according to how far the turn actually got. Blindly restarting
+    // replayed a partly-completed turn, which is what produced extra discards
+    // and apparently-skipped turns for other players.
+    if(cp._discardedThisTurn){
+      // It already discarded — the only thing missing is the hand-off.
+      endTurnHO();
+    } else {
+      // Nothing committed yet: finish the turn directly rather than re-running
+      // the whole chain (draw + meld + discard), which could double up.
+      try{
+        if(!G.drewCard&&G.phase!=='first-discard'){
+          if(isBagelChasing(cp)) gamblerDraw(cp); else cpuDraw(cp);
+        }
+        cpuDiscard(cp);
+      }catch(e){
+        console.warn('CPU watchdog: direct recovery failed, forcing hand-off',e);
+        endTurnHO();
+      }
+    }
   }catch(e){ console.warn('CPU watchdog error',e); }
 }
 if(typeof window!=='undefined') setInterval(cpuWatchdogTick,2000);
@@ -3233,6 +3266,7 @@ function endTurnHO(){
   cp.turnCount++;
   cp.hadMeldsAtTurnStart=cp.hasEverMelded;
   cp.calledThisTurn=false;
+  cp._discardedThisTurn=false;
   clearCPUAction();
   G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.redeemMustMeld=false;G.mustMeldTopId=null;
   flushTurnLog(); // bank this player's actions for the next human's summary
@@ -3403,19 +3437,47 @@ function nextHand(){dealHand();}
 
 function showFinal(){
   showSc('final');
-  const ps=[...G.players];
-  // Rules: "Award the 200-point end-game bonus to the player who went out on
-  // the final hand." That is whoever ended the last hand — NOT simply the
-  // highest scorer (the previous behavior), since the player who goes out is
-  // often not the one who crossed 1,000.
-  const finalWinner=G.players[G.finalHandWinnerIdx];
-  if(finalWinner) finalWinner.points+=200;
-  ps.forEach(p=>{p.fp=p.points+p.checks.length*100+p.bagels.length*250;});
-  ps.sort((a,b)=>b.fp-a.fp);const top=ps[0];
-  ps.forEach(p=>{if(p===top)return;const d=top.fp-p.fp,u=G.optRM?Math.round(d/500):Math.floor(d/500);top.money+=u*5;p.money-=u*5;});
+  // The tally MUTATES state (200-point bonus, money transfers), so it must run
+  // exactly once. It was previously reachable both automatically at 1,000
+  // points and via the "End game & tally" button, which double-counted both.
+  if(!G._tallied){
+    G._tallied=true;
+    // Rules: "Award the 200-point end-game bonus to the player who went out on
+    // the final hand." That is whoever ended the last hand — NOT simply the
+    // highest scorer, since the player who goes out is often not the leader.
+    const finalWinner=G.players[G.finalHandWinnerIdx];
+    if(finalWinner){finalWinner.points+=200;G._endBonusTo=finalWinner.name;}
+    G.players.forEach(p=>{p.fp=p.points+p.checks.length*100+p.bagels.length*250;});
+    const order=[...G.players].sort((a,b)=>b.fp-a.fp);
+    const top=order[0];
+    G._settlement=[];
+    order.forEach(p=>{
+      if(p===top) return;
+      const d=top.fp-p.fp;
+      const u=G.optRM?Math.round(d/500):Math.floor(d/500);
+      const amt=u*5;
+      top.money+=amt;p.money-=amt;
+      G._settlement.push({from:p.name,to:top.name,diff:d,units:u,amt});
+    });
+    G._settleTop=top.name;
+  }
+  const ps=[...G.players].sort((a,b)=>b.fp-a.fp);
   let html=`<table class="score-table"><thead><tr><th>Player</th><th>Points</th><th>Checks</th><th>Bagels</th><th>Final</th><th>Money</th></tr></thead><tbody>`;
   ps.forEach(p=>{html+=`<tr><td><strong>${p.name}</strong>${p===ps[0]?' 👑':''}</td><td>${p.points}</td><td>${p.checks.length}× +${p.checks.length*100}</td><td>${p.bagels.length}× +${p.bagels.length*250}</td><td><strong>${p.fp}</strong></td><td style="color:${p.money>=0?'#2e7d32':'#c0392b'};font-weight:500;">${p.money>=0?'+':''}${p.money.toFixed(1)}¢</td></tr>`;});
-  html+=`</tbody></table><div class="status-bar" style="margin-top:1rem;"><strong>${ps[0].name}</strong> wins! 🎉</div>`;
+  html+=`</tbody></table>`;
+  // Show the settlement explicitly — otherwise it silently folds into the
+  // Money column and looks as though nothing was collected.
+  if(G._endBonusTo) html+=`<div style="font-size:12.5px;color:#555;margin-top:10px;">+200 end-game bonus to <strong>${G._endBonusTo}</strong> for going out on the final hand.</div>`;
+  const st=G._settlement||[];
+  html+=`<div style="margin-top:10px;font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:0.05em;">Final settlement — 5¢ per 500 points (${G.optRM?'rounded to nearest':'rounded down'})</div>`;
+  if(!st.length||st.every(x=>x.amt===0)){
+    html+=`<div style="font-size:12.5px;color:#555;margin-top:4px;">No money changed hands — every gap was under 500 points.</div>`;
+  } else {
+    html+=`<table class="score-table" style="margin-top:4px;"><tbody>`;
+    st.forEach(x=>{html+=`<tr><td>${x.from} → <strong>${x.to}</strong></td><td style="text-align:right;color:#666;">${x.diff} pts = ${x.units}×500</td><td style="text-align:right;font-weight:500;">${x.amt.toFixed(1)}¢</td></tr>`;});
+    html+=`</tbody></table>`;
+  }
+  html+=`<div class="status-bar" style="margin-top:1rem;"><strong>${ps[0].name}</strong> wins on points — <strong>${[...G.players].sort((a,b)=>b.money-a.money)[0].name}</strong> wins the money! 🎉</div>`;
   document.getElementById('final-content').innerHTML=html;
 }
 
@@ -3602,7 +3664,7 @@ function restartHand(){
     p.checks=p.checks.filter(c=>c.hand!==handNum);
     p.bagels=p.bagels.filter(b=>b.hand!==handNum);
   });
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;rollBagelIntent(p);});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;p._discardedThisTurn=false;rollBagelIntent(p);});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.pendingSummary=[];G.lastTurn=null;G.cpuTurnLog=[];G._pendingEndHand=null;
   cm('m-score');

@@ -111,35 +111,61 @@ after the fact from a static snapshot.
 
 ---
 
-## OPEN — CPU turn froze (reported, no repro steps)
+## Resolved — stale call counts & invisible final settlement (2026-08-09-9)
 
-**Reported:** during a hand, "everything got stuck on a computer player's
-turn that it didn't take." Circumstances not captured.
+- **A call didn't update when the card count changed.** `autoDecl()` compared
+  `hand.length` against `declaredCount`, which is off by one: a call means
+  "this many AFTER I discard". A player who called 3, then next turn drew to 4
+  and melded one card back down to 3, sat at `hand.length === declaredCount`
+  and so never updated — yet after discarding they held 2 while still
+  advertising 3. Now compares `hand.length-1` (the true post-discard count).
+  Also extended to human players, who had the identical problem.
+- **The final money settlement was invisible, and could be applied twice.**
+  The maths was correct (5¢ per 500 points, rounded down by default) but it
+  silently folded into the Money column with no indication anything had been
+  collected — and in close games where every gap is under 500 the correct
+  result is genuinely 0¢, which looked like a bug. The final screen now shows
+  a settlement breakdown (who pays whom, the point gap, how many 500s, the
+  amount), states plainly when nothing changed hands and why, and calls out
+  the +200 end-game bonus recipient. Separately, `showFinal()` MUTATES state
+  (bonus + money transfers) and was reachable both automatically at 1,000
+  points and via the "End game & tally" button — running it twice
+  double-counted both. Now guarded by `G._tallied`.
+  The status line also now names the points winner and the money winner
+  separately, since the rules make money the actual win condition.
 
-**Mitigation shipped (build 2026-08-08-2), root cause NOT yet confirmed:**
-a watchdog (`cpuWatchdogTick`, 2s interval) now detects a CPU turn making no
-progress and recovers it, so a freeze no longer ends the hand. It also
-records what it saw into `G.stallLog`, which is now included in the Feedback
-report. **Next time this happens, hit Feedback — the report will name the
-stall kind, the player, the phase, and how long it hung.** That should
-identify the cause without needing repro steps.
+---
 
-Two candidate causes were found by inspection:
-1. `awaitingCPUAck` set to true while the Continue ▶ button doesn't render
-   (it requires `isActive && isCPU && G.awaitingCPUAck` simultaneously) — the
-   game would then wait forever for a button nobody can press. Watchdog
-   handles this specifically by checking whether the button is in the DOM.
-2. A dropped link in the chained `setTimeout`/`alive()` callbacks that drive
-   a CPU turn — any escaped exception or mistimed guard leaves nothing to
-   advance the turn. Watchdog re-drives `runCPUTurn()`.
+## PARTLY RESOLVED — CPU turn freeze: cause narrowed, damage stopped (2026-08-09-8)
 
-Also fixed alongside (definite bug, may or may not relate to the freeze):
-**`cpuMeldAsync` removed melded cards from the CPU's hand even when
-`pushMeld` had rejected the meld** — silently destroying cards (deck audit
-would report them missing). Worse, `cpuFindOneMeld` would keep proposing the
-same rejected combo, so the retry loop could spin. Now cards are only removed
-on a successful `commitNewMeld`, and a rejected proposal falls through to the
-add-to-existing pass instead of retrying.
+**The watchdog's stall log finally produced evidence.** Two events, both:
+`cpu-turn-stalled | Garlic(cpu) phase=first-discard idle≈45s drew=false`.
+So the freeze happens on the OPENING turn of a hand, before any draw — not
+randomly mid-hand as previously assumed.
+
+**The reported symptom was the watchdog, not the freeze.** On a stall it
+called `runCPUTurn()` again, restarting a turn that may already have been
+partway through. That replayed draws, melds and discards — which is why the
+human found five cards already on the pile and turns apparently skipped. So
+the recovery was doing more visible harm than the original hang.
+
+**Fixes (defensive; underlying hang not yet definitively reproduced):**
+- `cp._discardedThisTurn` — a CPU may discard only once per turn. Cleared at
+  turn end and at deal. This alone stops the duplicate-turn damage.
+- `cpuMeldAsync` now carries the `turnId` of the turn that started it and
+  drops itself if superseded, so a stale async chain can never act against a
+  newer turn's state.
+- The watchdog recovers according to how far the turn actually got: if the
+  CPU already discarded it just completes the hand-off; otherwise it finishes
+  the turn directly (draw if needed, then discard) instead of re-running the
+  whole chain. Falls back to `endTurnHO()` if that throws.
+- Stall entries now also record `discarded`, `melds` and `bagel`.
+
+**Still to determine:** why the opening-turn chain dies in the first place.
+The next stall report will show `discarded:` and `bagel:`, which should
+distinguish a chain that never started from one that died mid-way. Suspicion:
+something in the first-discard branch of `runCPUTurn` (the only turn type
+that skips the draw entirely and calls `cpuMeldAsync` directly).
 
 ---
 
