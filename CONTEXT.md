@@ -45,7 +45,11 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - shouldCall(cp): ≤3 cards after discard OR canBagelCached non-null
 - normDecl(s): normalizes suit input (3C→3♣, 10s→10♠)
 - CPU names auto-assigned: Conservative=Plain/Pumpernickel/Egg/Cinnamon-Raisin; Gambler=Poppy/Everything/Garlic/Onion
-- Three modes: all-human (pass & play), one human+CPU (continuous), all CPU (watch)
+- ANY mix of humans and CPUs is now supported (the old "all human / one human+CPU / all CPU" restriction is retired). `G.humanCount` drives flow.
+- Consolidated round summaries: every player's actions are logged via `cpuLog()` (humans included), flushed by `flushTurnLog()` at end of turn into `G.pendingSummary`, and shown to the next human ONCE on the handoff screen — then cleared in `revealTurn()`. Replaces the old per-CPU-turn "Continue ▶" ack: one tap per player per round.
+- Summaries are deliberately NOT re-viewable. Making them so would grant perfect recall of the discard pile, which the rules forbid.
+- All-CPU watch mode uses a continuous scrolling feed (`#cpu-feed`, `feedPush()`) with no acknowledgements.
+- Discard history strip REMOVED from the handoff screen — only the top card is visible, per the rules.
 - Show CPU cards checkbox (default OFF — shows melds/discards, hides hand values)
 - CPU speed: Fast(800ms)/Medium(1600ms)/Slow(2400ms); all-CPU at half speed
 - CPU auto-cut; cut result shown briefly when Show CPU cards ON
@@ -94,6 +98,38 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - `declRank(c)` — extracts the rank a wild's `declaredAs` represents (e.g. "A♥"→14), used by `tryRun` to honor an explicit player declaration
 - `tryRun()` — when assigning a wild to a rank slot, if that wild already has `declaredAs` set, the attempt is rejected unless the assigned rank matches the declaration. Fixes the bug where e.g. Q♥,K♥,+wild was silently interpreted using selection-click-order (deuce clicked first → low extension → Jack) even when the player explicitly wanted it declared as an Ace.
 - `openMeld()`/`confirmMeld()` — the "ambiguous wild position, please declare" UI (previously only triggered for Jokers via `sel.filter(c=>c.joker)`) now triggers for ANY wild card via `sel.filter(c=>c.wild)`, since Deuces have the identical ambiguous-run-position problem as Jokers (e.g. Q,K,+wild could be J-Q-K or Q-K-A). Skipped entirely when the selection is unambiguously a set (`trySet(sel)` true).
+
+## ⚠ Bagel is NOT Rummy — do not reason by analogy
+
+Bagel shares surface features with rummy-family games (melds, runs, sets,
+wilds, a discard pile) but the rules diverge in ways that make rummy
+intuitions actively misleading. When reasoning about strategy or rules,
+work from `RULES.md`, never from what "usually" happens in rummy.
+
+Distinctive to Bagel, among others:
+- 106 cards (TWO decks + 2 jokers) — duplicate cards exist, so repeated suits
+  in a set are legal and a wild may represent a card already on the table.
+- **Calling cards** — you must announce your count before discarding, it takes
+  effect only NEXT turn, and you cannot go out without having called earlier.
+- **Bagel (250) and Dream** bonuses for going out all at once.
+- Parallel **points and money** scoring; the money winner wins the game.
+- A wild **permanently owns the position it was played into**; melds can never
+  be rearranged.
+- **Q♠ is special but not wild**, and no wild may ever stand in for it.
+- **Joker redemption** — from your OWN melds only.
+- Pile pickup requires immediately melding the top card with 2 naturals.
+- Sets are capped at 4; aces are high only.
+
+## CPU strategy weights are HEURISTICS, not rules
+
+The persona weights and the scoring adjustments (two-card-trap penalty,
+3-card split preference, high-value wild placement) encode general guidance,
+not laws. The user's framing: "generally but not always better" — there are
+plenty of positions where the opposite play is correct. They are deliberately
+tunable single numbers, and the softmax `temperature` means CPUs already
+depart from them some of the time on purpose. Do not harden any of these into
+absolute rules, and do not treat a CPU choosing otherwise as a bug unless it
+breaks an actual RULES.md requirement.
 
 ## Key design decisions
 - Card order in selection = wild placement intent in runs

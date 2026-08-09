@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-08-17 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-2 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-08-17</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-2</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -218,6 +218,12 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
         <div id="status-bar" class="status-bar" style="display:none;margin:0;border-radius:0;"></div>
         <div id="warn-bar" class="warning-bar" style="display:none;margin:0;border-radius:0;"></div>
         <div id="cpu-action-bar" style="display:none;"></div>
+        <!-- All-CPU watch mode: continuous activity feed (no acknowledgements,
+             since no information is being hidden from anyone). -->
+        <div id="cpu-feed-wrap" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;opacity:0.5;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">Activity</div>
+          <div id="cpu-feed" style="max-height:190px;overflow-y:auto;font-size:12px;line-height:1.45;background:rgba(255,255,255,.6);border:1px solid rgba(0,0,0,.08);border-radius:8px;padding:6px 9px;"></div>
+        </div>
       </div>
       <div class="sidebar-panel" style="text-align:center;">
         <div style="font-size:15px;font-weight:500;" id="g-hand"></div>
@@ -777,6 +783,9 @@ function startGame(){
   personaNames.forEach((pn,i)=>{ if(pn&&claimed.filter(c=>c===pn).length===1) names[i]=pn; });
   G={
     playerCount:n,
+    humanCount,
+    pendingSummary:[],
+    feed:[],
     players:names.map((name,i)=>({name,id:i,type:types[i],persona:personaNames[i]?personaFor(personaNames[i]):null,personaName:personaNames[i]||null,memory:null,hand:[],melds:[],points:0,money:0,checks:[],bagels:[],declared:false,declaredCount:null,hasEverMelded:false,turnCount:0,missedDeclaration:false,handOrder:null,hadMeldsAtTurnStart:false,calledThisTurn:false,_gamblerBagelCard:null})),
     drawPile:[],discardPile:[],hand:0,dealerIdx:0,currentIdx:0,
     phase:'draw',sel:[],mustMeldTopId:null,mustNaturalIds:null,redeemMustMeld:false,drewCard:false,
@@ -948,8 +957,9 @@ function showHandoff(){
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
 
-  // In single human or all-CPU mode: skip handoff
-  if(G.singleHumanMode||G.allCPUMode){
+  // All-CPU watch mode runs continuously; a lone human still gets the
+  // summary screen (below) but never a "pass the device" cover.
+  if(G.allCPUMode){
     if(isCPU){
       if(G.optShowCPU){
         // Show CPU play on game screen
@@ -970,7 +980,16 @@ function showHandoff(){
     }
   }
 
-  // All-human mode: show handoff screen as before
+  // A lone human needs the round summary but not a privacy cover — go
+  // straight to the table once there is nothing left to report.
+  if(!isCPU&&G.humanCount<=1&&!(G.pendingSummary&&G.pendingSummary.length)){
+    showSc('game');G.sel=[];clearCPUAction();updateGame();
+    if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard (or meld first).`);
+    else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
+    setTimeout(()=>checkJokerNotifications(),300);
+    return;
+  }
+
   if(isCPU){
     document.getElementById('ho-name').textContent=cp.name;
     document.getElementById('ho-sub').textContent=`🤖 ${cp.name} is thinking...`;
@@ -982,30 +1001,29 @@ function showHandoff(){
     document.getElementById('ho-btn').style.display='block';
   }
 
-  let s=`<div style="font-size:11px;opacity:0.5;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Table state</div>`;
+  let s='';
+  // What happened since this player last acted. Shown ONCE, then discarded —
+  // it stands in for having watched those turns at the table. Deliberately
+  // not re-viewable later, or it would hand the player perfect recall of the
+  // discard pile, which the rules ("only the top card is visible") forbid.
+  const pend=G.pendingSummary||[];
+  if(pend.length){
+    s+=`<div style="font-size:11px;opacity:0.5;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">While you were away</div>`;
+    s+=pend.map(e=>`<div style="background:rgba(255,255,255,.75);border-radius:8px;padding:8px 10px;margin-bottom:6px;text-align:left;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:2px;">${e.name}${e.isCPU?' 🤖':''}</div>
+        <ul style="margin:0;padding-left:16px;font-size:12.5px;line-height:1.5;">${e.msgs.map(m=>`<li>${m}</li>`).join('')}</ul>
+      </div>`).join('');
+    s+=`<div style="font-size:11px;color:#8a7f6a;margin:2px 0 10px;">Take note — this won't be shown again.</div>`;
+  }
+  s+=`<div style="font-size:11px;opacity:0.5;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Table state</div>`;
   G.players.forEach(p=>{
     const mp=p.melds.reduce((s,m)=>s+mPts(m),0);
     s+=`<div class="row"><span>${p.name}${p.id===G.dealerIdx?' ✦':''} ${p.type&&p.type!=='human'?'🤖':''}</span><span>${p.hand.length} cards · ${mp>0?mp+'pts on table':'no melds'}${p.declared?` · called (${p.declaredCount})`:''}</span></div>`;
   });
-  s+=`<div class="row"><span>Draw pile</span><span>${G.drawPile.length} cards</span></div>`;
+  s+=`<div class="row"><span>Deck</span><span>${G.drawPile.length} cards</span></div>`;
   const top=G.discardPile[G.discardPile.length-1];
-  s+=`<div class="row"><span>Discard pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
-  // Show last N discards so player can see what happened since their turn
-  const n=G.players.length;
-  const recentCount=Math.min(n, G.discardPile.length);
-  if(recentCount>0){
-    const recent=G.discardPile.slice(G.discardPile.length-recentCount);
-    s+=`<div style="margin-top:8px;font-size:11px;color:#666;margin-bottom:4px;">Recent discards (oldest → newest):</div>`;
-    s+=`<div style="display:flex;gap:4px;flex-wrap:wrap;">${recent.map(c=>{
-      let cls=`card-el ${cCol(c)}`;
-      if(c.joker||c.wild)cls+=' special-wild';
-      if(c.qs)cls+=' special-qs';
-      return`<div class="${cls}" style="width:34px;height:50px;flex-shrink:0;">
-        <div style="font-size:11px;font-weight:700;">${c.joker?'★':c.rank}</div>
-        <div style="font-size:10px;">${c.suit}</div>
-      </div>`;
-    }).join('')}</div>`;
-  }
+  // Only the TOP discard is ever shown — the rest must be remembered.
+  s+=`<div class="row"><span>Pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
   document.getElementById('ho-summary').innerHTML=s;
   showSc('handoff');
 
@@ -1013,6 +1031,7 @@ function showHandoff(){
 }
 
 function revealTurn(){
+  G.pendingSummary=[]; // shown once; never replayable
   showSc('game');G.sel=[];clearCPUAction();updateGame();
   const cp=G.players[G.currentIdx];
   if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard before play begins.`);
@@ -1095,10 +1114,9 @@ function rcSmall(c){
 }
 
 function pushMeld(cp, cards, type){
-  // Single gate for creating brand-new melds. Always re-validates with valMeld
-  // regardless of what the caller believes — this is what prevents illegal
-  // (e.g. mixed run+set, or sub-3-card) melds from CPU or human code paths.
-  if(!commitNewMeld(cp, cards)){
+  // Single gate for CPU meld creation. Routes through cpuCommitMeld so wilds
+  // take their highest-value legal position, then re-validates via valMeld.
+  if(!cpuCommitMeld(cp, cards)){
     console.warn('pushMeld: rejected invalid/incomplete meld',cards?.map(c=>c&&(c.rank+ (c.suit||''))));
   }
 }
@@ -1162,6 +1180,8 @@ function sortMeld(meld){
 function renderAllMelds(){ renderAllPlayers(); }
 
 function renderAllPlayers(){
+  const fw=document.getElementById('cpu-feed-wrap');
+  if(fw) fw.style.display=G.allCPUMode?'block':'none';
   const cp=G.players[G.currentIdx];
   const allHuman=!G.singleHumanMode&&!G.allCPUMode;
 
@@ -1284,22 +1304,10 @@ function renderAllPlayers(){
         <button class="btn small" id="btn-undecl" onclick="doUndeclare()" style="display:none;">Uncall</button>
       </div>`:'';
 
-    // Continue button for CPU zone when awaiting ack — now preceded by a
-    // plain-language summary of what this CPU actually did on its turn,
-    // instead of an unexplained "Continue".
+    // No per-CPU "Continue" any more — a player now sees ONE consolidated
+    // summary of everything that happened while they were away, on the
+    // handoff screen at the start of their own turn.
     let continueHtml='';
-    if(isActive&&isCPU&&G.awaitingCPUAck){
-      const own=cpuLogFor(p.id);
-      const acts=own.length?own:['took its turn'];
-      const items=acts.map(a=>`<li style="margin-bottom:2px;">${a}</li>`).join('');
-      continueHtml=`<div style="margin-top:10px;">
-        <div style="background:#eef4fb;border:1px solid #c3d7ec;border-radius:8px;padding:10px 12px;text-align:left;font-size:13px;color:#24405e;">
-          <div style="font-weight:600;margin-bottom:4px;">${p.name}'s turn</div>
-          <ul style="margin:0;padding-left:18px;">${items}</ul>
-        </div>
-        <div style="text-align:center;margin-top:8px;"><button class="btn primary" style="padding:10px 28px;font-size:15px;" onclick="ackCPUDiscard()">Continue ▶</button></div>
-      </div>`;
-    }
 
     const nameLabel=isHuman&&!isCPU?'You':p.name;
     const metaLabel=`${p.hand.length}🃏 · ${p.points}pts${p.declared?` · <span style="color:#e65100;">called ${p.declaredCount}</span>`:''}${p.id===G.dealerIdx?' ✦':''}`;
@@ -1404,17 +1412,44 @@ function renderHand(){ renderAllPlayers(); }
 // ── CPU turn narration ────────────────────────────────────────────
 // Records what a CPU actually did on its turn, so the human isn't staring at
 // a blank "Continue" with no idea what happened.
+// Records what the CURRENT player did. Applies to humans as well as CPUs —
+// with consolidated summaries, other humans need to see these actions too.
 function cpuLog(msg){
   if(!G.cpuTurnLog) G.cpuTurnLog=[];
-  // Tag with WHOSE turn it was. Entries were previously untagged, so anything
-  // left over from a prior player's turn would be displayed as if the current
-  // CPU had done it.
   const who=G.players[G.currentIdx];
   G.cpuTurnLog.push({pid:who?who.id:-1,msg});
+  if(G.allCPUMode) feedPush(who?who.name:'?',msg); // watch mode: live feed
 }
 function cpuLogReset(){ G.cpuTurnLog=[]; }
 function cpuLogFor(pid){
   return (G.cpuTurnLog||[]).filter(e=>e&&e.pid===pid).map(e=>e.msg);
+}
+
+// At the end of a turn, move that player's actions into the pending summary
+// that the next human will be shown. This replaces the old per-CPU-turn
+// "Continue ▶" acknowledgement: one summary, one tap, per player per round.
+function flushTurnLog(){
+  const cp=G.players[G.currentIdx];
+  if(!cp) return;
+  const msgs=cpuLogFor(cp.id);
+  if(msgs.length){
+    if(!G.pendingSummary) G.pendingSummary=[];
+    G.pendingSummary.push({pid:cp.id,name:cp.name,isCPU:cp.type&&cp.type!=='human',msgs});
+  }
+  cpuLogReset();
+}
+
+// Live activity feed, used only in all-CPU watch mode (nobody is hiding
+// information from anyone, so there is nothing to acknowledge).
+function feedPush(name,msg){
+  if(!G.feed) G.feed=[];
+  G.feed.push(`${name}: ${msg}`);
+  if(G.feed.length>200) G.feed=G.feed.slice(-200);
+  const el=document.getElementById('cpu-feed');
+  if(el){
+    el.innerHTML=G.feed.slice(-60).map(l=>`<div style="padding:2px 0;border-bottom:1px solid rgba(0,0,0,.05);">${l}</div>`).join('');
+    el.scrollTop=el.scrollHeight;
+  }
 }
 function cpuLogCards(cards){ return cards.map(c=>cLbl(c)).join(' '); }
 
@@ -1657,6 +1692,7 @@ function drawCard(){
   if(!G.drawPile.length){endHandDead();return;}
   const drawn=G.drawPile.pop();
   const cp=G.players[G.currentIdx];
+  cpuLog('drew a fresh card');
   cp.hand.push(drawn);
   // Add to END of handOrder so drawn card appears rightmost
   if(cp.handOrder) cp.handOrder.push(drawn.id);
@@ -1784,6 +1820,7 @@ function puStep2(){
 
 function confirmPickup(){
   const cp=G.players[G.currentIdx],all=[...G.discardPile];
+  cpuLog(`picked up the pile (${G.discardPile.length} card${G.discardPile.length!==1?'s':''})`);
   G.pickedUpCount=G.discardPile.length;
   G.discardPile=[];all.forEach(c=>cp.hand.push(c));
   if(cp.handOrder) all.forEach(c=>cp.handOrder.push(c.id));
@@ -2001,6 +2038,7 @@ function confirmMeld(){
   }
   const keepIds=chosen?chosen.assignments.map(a=>a.id):[];
   if(!commitNewMeld(cp, sel, keepIds)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
+  cpuLog(`melded ${cpuLogCards(sel)}`);
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   G.sel=[];cp.hasEverMelded=true;
   if(G.mustMeldTopId&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.mustNaturalIds=null;G.redeemMustMeld=false;}
@@ -2293,6 +2331,7 @@ function confirmAdd(mi){
     if(chosenAdd) sel.forEach(c=>{if(c.wild)c.declaredAs=null;});
     document.getElementById('add-err').textContent='Not a valid meld.';return;
   }
+  cpuLog(`added ${cpuLogCards(sel)} to a meld`);
   sel.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
   if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
   if(G.redeemMustMeld&&sel.some(c=>c.id===G.mustMeldTopId)){G.mustMeldTopId=null;G.redeemMustMeld=false;}
@@ -2356,7 +2395,7 @@ function doDiscard(){
   if(isSp(card)&&!goOut){setWarn(`${cLbl(card)} is special — can only discard it when going out.`);return;}
   if(G.phase==='first-discard'){
     const goOutFirst=cp.hand.length===1;
-    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
+    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];cpuLog(`discarded ${cLbl(card)}`);cpuLog(`discarded ${cLbl(card)}`);
     if(goOutFirst){endHand(G.currentIdx);return;}
     endTurnHO();return;
   }
@@ -2366,7 +2405,7 @@ function doDiscard(){
   if(!goOut&&shouldCall(cp)){
     cp.missedDeclaration=true;
   }
-  cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];
+  cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];cpuLog(`discarded ${cLbl(card)}`);
   if(goOut){
     const gate=canGoOut(cp);
     if(!gate.ok){
@@ -2473,6 +2512,7 @@ function confirmDecl(){
   if(!G.jokerNotifications) G.jokerNotifications=[];
   const callMsg=`📣 ${cp.name} called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`;
   cm('m-decl');updateDeclUI();
+  cpuLog(`📣 called ${cp.declaredCount} card${cp.declaredCount!==1?'s':''}`);
   announceEvent(callMsg);
 }
 function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.declaredCount=null;cp.calledThisTurn=false;updateDeclUI();}
@@ -2539,7 +2579,7 @@ function cpuMeldAsync(cp,speed,onDone){
     // Critically, only strip the cards from hand if it actually succeeded —
     // the old code removed them unconditionally, so a rejected meld silently
     // destroyed cards (deck audit would then report cards missing).
-    if(commitNewMeld(cp,meld)){
+    if(cpuCommitMeld(cp,meld)){
       meld.forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
       if(cp.handOrder)cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
       cp.hasEverMelded=true;
@@ -2585,6 +2625,41 @@ function isBagelChasing(cp){
   return P.bagelAmbition>0.7;
 }
 
+// Points a wild earns standing in for a given declared card.
+function wildPointValue(decl){
+  if(!decl) return 0;
+  const r=String(decl).replace(/[♠♥♦♣]/g,'').trim();
+  return rPts(r)||0;
+}
+
+// Commits a CPU meld, first choosing the most VALUABLE legal position for any
+// wild. A deuce scores whatever it stands in for, so with a free choice it
+// should represent an Ace (20) rather than a 4 (5). tryRun alone just returns
+// the first arrangement it finds, which is arbitrary in value terms.
+function cpuCommitMeld(cp,cards){
+  let keep=[];
+  const opts=wildAssignmentOptions(cards);
+  if(opts.length>1){
+    let best=null,bestV=-1;
+    opts.forEach(o=>{
+      const v=o.assignments.reduce((a,x)=>a+wildPointValue(x.decl),0);
+      if(v>bestV){bestV=v;best=o;}
+    });
+    if(best){
+      best.assignments.forEach(a=>{const c=cards.find(x=>x.id===a.id);if(c)c.declaredAs=a.decl;});
+      keep=best.assignments.map(a=>a.id);
+    }
+  }
+  const ok=commitNewMeld(cp,cards,keep);
+  if(!ok) keep.forEach(id=>{const c=cards.find(x=>x.id===id);if(c)c.declaredAs=null;});
+  return ok;
+}
+
+// Could any of these cards be added to one of cp's existing melds?
+function anyCardExtendsAMeld(cp,cards){
+  return cards.some(c=>cp.melds.some(m=>canAddToMeld(m,[c])));
+}
+
 function scoreMeld(cp,combo){
   const P=cp.persona||DEFAULT_PERSONA;
   let s=0;
@@ -2602,8 +2677,24 @@ function scoreMeld(cp,combo){
   s-=P.bagelAmbition*70;
   // Eager melders get a flat nudge toward putting cards down now.
   s+=P.meldEagerness*25;
-  // Prefer bigger melds slightly (clears more hand, more points).
-  s+=combo.length*3;
+  // Prefer SPLITTING into 3-card melds rather than building one long run.
+  // Two 3-card runs offer four ends to extend later; one 6-card run offers
+  // two. More melds also means more places to unload awkward cards.
+  // The bonus must exceed the extra card's face value, or a 4-card meld ties
+  // on score and the preference becomes an accident of how many combinations
+  // happen to be enumerated.
+  s+=(combo.length===3?18:0);
+  // Value the position a wild takes: standing in for an Ace is worth 20,
+  // for a 4 only 5. Prefer the arrangement that scores more.
+  const rr=tryRun(combo);
+  if(rr&&rr.assignedRanks){
+    rr.assignedRanks.forEach(({card,rank})=>{
+      if(card.wild){
+        const rn=Object.keys(RO).find(k=>RO[k]===rank);
+        s+=(rPts(rn)||0)*1.2;
+      }
+    });
+  }
   return s;
 }
 
@@ -2705,7 +2796,7 @@ function cpuDraw(cp){
           used=[top];
         }
       } else {
-        if(commitNewMeld(cp,plan.cards)){
+        if(cpuCommitMeld(cp,plan.cards)){
           cpuLog(`melded ${cpuLogCards(plan.cards)}`);
           used=plan.cards;
         }
@@ -2824,10 +2915,28 @@ function discardDanger(cp,card){
   return d;
 }
 
+// Being left with exactly TWO cards is a trap. Next turn you draw one, giving
+// three; to go out you must discard one and play the other two — and two cards
+// can never form a meld on their own (minimum is three). So BOTH remaining
+// cards must be addable to existing melds, or you simply cannot go out, no
+// matter what you draw. One card is fine (draw, add it, discard the draw);
+// three or more is fine (they can form a meld). Two is the dead spot.
+function twoCardTrapPenalty(cp,card){
+  const after=cp.hand.filter(c=>c.id!==card.id);
+  if(after.length!==2) return 0;
+  if(!cp.melds.length) return 55;               // nothing to add to at all
+  const addable=after.filter(c=>cp.melds.some(m=>canAddToMeld(m,[c]))).length;
+  if(addable===2) return 0;                      // genuinely fine — both fit
+  if(addable===1) return 30;                     // stuck on one card
+  return 55;                                     // neither fits: cannot go out
+}
+
 function scoreDiscard(cp,card){
   const P=cp.persona||DEFAULT_PERSONA;
   // Base: shedding penalty points is good (cPts is negative for in-hand).
   let s=Math.abs(cPts(card,true))*P.riskAversion;
+  // Avoid discarding into the two-card dead end.
+  s-=twoCardTrapPenalty(cp,card);
   // But keep cards that are doing work for us.
   s-=cardUsefulness(cp,card)*(1.0+(1-P.riskAversion)*0.5);
   // And avoid handing opponents what they need.
@@ -3030,20 +3139,10 @@ function cpuDoDiscard(cp,card,goOut){
 
 function cpuAfterDiscard(){
   const speed=G.cpuSpeed||800;
-  // The opening turn used to be exempt from the acknowledgement, so when a
-  // CPU held the 14-card opening hand the human never saw what it did — it
-  // just silently melded and discarded before their first look at the table.
-  // It now pauses like any other CPU turn.
-  if(G.singleHumanMode){
-    const name=G.players[G.currentIdx].name;
-    G.awaitingCPUAck=true;
-    setCPUAction(`🤖 ${name} discarded`);
-    updateGame();
-  } else if(G.allCPUMode){
-    setTimeout(()=>endTurnHO(),speed*2);
-  } else {
-    setTimeout(()=>endTurnHO(),speed);
-  }
+  // No per-CPU-turn acknowledgement any more. Every player's actions are
+  // banked and shown to the next human as ONE consolidated summary, so a
+  // human taps once per round rather than once per intervening CPU.
+  setTimeout(()=>endTurnHO(),G.allCPUMode?speed:speed*1.2);
 }
 
 // ── CPU stall watchdog ────────────────────────────────────────────
@@ -3069,14 +3168,6 @@ function cpuWatchdogTick(){
 
     // If we're legitimately waiting on the human to press Continue, only
     // intervene when that button isn't actually on screen to be pressed.
-    if(G.awaitingCPUAck){
-      if(document.querySelector('button[onclick="ackCPUDiscard()"]')){ noteProgress(); return; }
-      G.stallLog=(G.stallLog||[]);
-      G.stallLog.push({at:new Date().toISOString(),kind:'awaitingCPUAck-no-button',player:cp.name,phase:G.phase,idleMs:idle});
-      console.warn('CPU watchdog: awaiting ack but no Continue button rendered — auto-advancing.');
-      ackCPUDiscard();
-      return;
-    }
 
     G.stallLog=(G.stallLog||[]);
     G.stallLog.push({at:new Date().toISOString(),kind:'cpu-turn-stalled',player:cp.name,type:cp.type,
@@ -3113,12 +3204,13 @@ function endTurnHO(){
   cp.calledThisTurn=false;
   clearCPUAction();
   G.drewCard=false;G.sel=[];G.swapFirst=null;G.reordering=false;G.redeemMustMeld=false;G.mustMeldTopId=null;
+  flushTurnLog(); // bank this player's actions for the next human's summary
   G.currentIdx=(G.currentIdx+1)%G.players.length;
   // first-discard only applies to handFirstPlayer (who holds 14 cards). Everyone else draws.
   G.phase='draw';
   clearSt();
   const next=G.players[G.currentIdx];
-  if(next&&next.type!=='human'&&!G.optShowCPU&&(G.singleHumanMode||G.allCPUMode)){
+  if(next&&next.type!=='human'&&!G.optShowCPU&&!G.allCPUMode){
     setTimeout(()=>runCPUInstant(),0);
   } else {
     showHandoff();

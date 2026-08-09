@@ -58,72 +58,7 @@ Passover. Pieces to design/build:
 *Awaiting user's specific sayings, trigger circumstances, and confirmation
 on deck scope before implementation.*
 
-### 4. UI redesign — make it look like a real card game (DEFERRED)
-
-Current UI is functional but clunky and doesn't read as a card game. Decision
-deliberately deferred; options preserved below so we can pick one up later.
-
-**The core difficulty is melds, not seating.** A round table works well for
-≤4 players and gets awkward at 5 — but melds are what actually breaks table
-layouts at any player count: they grow unboundedly, and a player with five
-melds needs far more room than a fixed seat can give.
-
-**Option A — Seats + shared meld area.** Players around the edge showing only
-name, card count, status. ALL melds live in a central zone, colour-coded or
-badged by owner. Handles 5 players cleanly and scales with meld count.
-Trade-off: loses the immediate visual "these are *her* melds" grouping.
-
-**Option B — Seats with expandable melds.** Each seat shows a compact summary
-("3 melds, 85 pts") that expands on tap. Keeps ownership obvious and the
-table tidy; costs a tap to inspect an opponent.
-
-**Option C — Focus view.** Your hand and melds prominent at the bottom;
-opponents a compact strip you tap to bring into focus. Least "card table"-ish,
-but most robust on a small screen and least likely to break at 5 players.
-
-**Recommended method: a separate FORK, not an option flag.** A real layout
-change touches nearly every render path; maintaining two layouts behind a
-toggle would roughly double the surface area for exactly the class of bug
-we've spent this project chasing. Fork it, play both, keep the winner.
-
-**Recommended timing: AFTER the CPU memory model (item 3).** The CPU work is
-confined to decision logic and won't conflict with layout. Doing an AI change
-and a UI rewrite simultaneously would make regressions hard to attribute.
-
-**QUESTION TO ASK THE USER BEFORE STARTING:** is the primary device the iPad,
-or should this also work well on a phone? That one answer eliminates roughly
-half the design space (notably, Option C becomes much more attractive if
-phone matters; Options A/B are more natural if it's iPad-first).
-
-Related smaller item: the in-game UI still says "Draw" / "Draw pile" rather
-than the "fresh card" / "deck (stack)" vocabulary standardised in RULES.md.
-Worth folding into whichever redesign happens.
-
----
-
 ### 3. Refine CPU strategy realism + add more CPU player types
-
-**STRATEGY REFINEMENTS (build 2026-08-09-2)** — three weaknesses reported
-from real play, all fixed:
-- *Two-card trap.* CPUs kept leaving themselves exactly 2 cards. That is a
-  dead spot: next turn you draw one, hold three, and must discard one and play
-  the other two — but two cards can never form a meld alone (minimum 3), so
-  BOTH must be addable to existing melds or you cannot go out at all,
-  whatever you draw. `twoCardTrapPenalty()` now penalises a discard leaving 2
-  cards: 0 if both remaining cards extend a meld, 30 if one does, 55 if
-  neither. One card and three-plus are unpenalised.
-- *Over-long runs.* CPUs built one long run where two shorter ones were
-  available. Two 3-card runs give four ends to extend; one 6-card run gives
-  two. `scoreMeld` now adds +18 for a 3-card meld — deliberately more than the
-  extra card's face value, otherwise a 4-card meld TIES on score and the
-  preference becomes an accident of enumeration order. Measured: Shark splits
-  100%, Grinder 98%, Scatterbrain 84% (personality still differentiates).
-- *Wasteful wild placement.* A deuce scores whatever it stands in for, so with
-  a free choice it should be an Ace (20) not a 4 (5). `tryRun` returns the
-  first valid arrangement, which is arbitrary in value terms. New
-  `cpuCommitMeld()` enumerates legal placements via `wildAssignmentOptions()`
-  and picks the highest-scoring one before committing. Verified: 7♥ 8♥ + deuce
-  now takes 9♥ (10pts) over 6♥ (5pts); Q♥ K♥ + deuce takes A♥ (20) over J♥ (10).
 
 **STAGE 1 SHIPPED (build 2026-08-08-3)** — scoring/selection framework +
 personalities. Still TODO: **Stage 2, the memory model** (`memDepth`,
