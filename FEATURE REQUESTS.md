@@ -103,6 +103,23 @@ Worth folding into whichever redesign happens.
 
 ### 3. Refine CPU strategy realism + add more CPU player types
 
+**BAGEL APPETITE FIX (build 2026-08-09-6)** — user suspected CPUs melded too
+eagerly and rarely held out for a bagel, and wondered whether they'd simply
+under-sampled. Measured it: the behaviour was *binary*, not under-sampled.
+`isBagelChasing()` used a hard threshold (`bagelAmbition > 0.7`), so only
+Everything (0.95) ever qualified — and it then chased on 100% of hands, while
+Garlic (0.60), Poppy (0.45) and everyone else chased on 0%. A second hard gate
+in `cpuFindOneMeld` repeated the same threshold.
+
+Fixed by making the decision a per-HAND roll with probability equal to
+`bagelAmbition` (`rollBagelIntent()`, called for every CPU at deal). Risk
+appetite now varies both between characters and from hand to hand. Measured
+over 1500 hands: Plain 4%, Egg 6%, Cinnamon-Raisin 20%, Onion 24%,
+Pumpernickel 34%, Poppy 44%, Garlic 60%, Everything ~100% (its 0.95 ambition
+plus the strong negative meld score keeps the Dreamer almost always dreaming).
+The choice is sticky within a hand and clears once the CPU melds, since a
+bagel is impossible after that.
+
 **STRATEGY REFINEMENTS (build 2026-08-09-2)** — three weaknesses reported
 from real play, all fixed:
 - *Two-card trap.* CPUs kept leaving themselves exactly 2 cards. That is a

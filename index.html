@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-4 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-6 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-4</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-6</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -834,22 +834,36 @@ function restoreSnapshot(snap){
 
 function dealHand(){
   G.snapshot=snapshotPlayers(); // save state before this hand
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;rollBagelIntent(p);});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.pendingSummary=[];G.lastTurn=null;G.cpuTurnLog=[];G._pendingEndHand=null;
   G.savedDeck=null; // will be saved after cut
   showCut(shuffle(createDeck()));
 }
 
+// Picks a plausible starting/auto cut position that is NOT sitting on the
+// perfect cut. With 4 players the exact cut is 13×4+1 = 53 below, i.e. a
+// 53-card split of a 106-card deck — precisely the midpoint — so a midpoint
+// default handed the cutter a free Perfect Cut check every hand.
+function suggestCutPos(deckLen,n){
+  const exactCut=deckLen-(13*n+1); // slider position that yields a perfect cut
+  let pos=Math.round(deckLen/2)+Math.floor((Math.random()-0.5)*26);
+  if(Math.abs(pos-exactCut)<3){
+    const push=4+Math.floor(Math.random()*5);
+    pos+=(pos<=exactCut?-push:push);
+  }
+  return Math.max(12,Math.min(deckLen-12,pos));
+}
+
 function showCut(deck){
   G.deck=deck;
   const n=G.players.length,ci=(G.dealerIdx+n-1)%n,cutter=G.players[ci];
   G.cutterIdx=ci;
-  G.cutSliderVal=Math.round(deck.length/2);
+  G.cutSliderVal=suggestCutPos(deck.length,n);
 
   // If cutter is CPU, auto-cut
   if(cutter.type&&cutter.type!=='human'){
-    const cp=Math.round(deck.length/2)+Math.floor((Math.random()-0.5)*20);
+    const cp=suggestCutPos(deck.length,n);
     G.cutSliderVal=cp;
     const topPart=deck.slice(0,cp),botPart=deck.slice(cp);
     let kept=[],botN=null,pi=topPart.length-1;
@@ -974,45 +988,27 @@ function showHandoff(){
   const cp=G.players[G.currentIdx];
   const isCPU=cp.type&&cp.type!=='human';
 
-  // All-CPU watch mode runs continuously; a lone human still gets the
-  // summary screen (below) but never a "pass the device" cover.
-  if(G.allCPUMode){
-    if(isCPU){
-      if(G.optShowCPU){
-        // Show CPU play on game screen
-        showSc('game');G.sel=[];updateGame();
-        setTimeout(()=>runCPUTurn(),G.allCPUMode?400:600);
-      } else {
-        // Hidden mode: execute CPU turn instantly, no visual
-        showSc('game');G.sel=[];updateGame();
-        setTimeout(()=>runCPUInstant(),0);
-      }
-      return;
-    } else {
-      showSc('game');G.sel=[];clearCPUAction();updateGame();
-      if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard (or meld first).`);
-      else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
-      setTimeout(()=>checkJokerNotifications(),300);
-      return;
-    }
-  }
-
-  // A lone human goes straight to the table. The round summary is no longer
-  // forced in front of them — it's available on demand via the Summary
-  // button, which keeps play moving instead of interrupting every round.
-  if(!isCPU&&G.humanCount<=1){
-    showSc('game');G.sel=[];clearCPUAction();updateGame();
-    if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard (or meld first).`);
-    else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
-    setTimeout(()=>checkJokerNotifications(),300);
+  // A CPU NEVER gets the "pass the device" cover — its turn plays out on the
+  // table so it can actually be watched. Previously any CPU turn outside
+  // all-CPU mode fell through to a "🤖 X is thinking..." screen showing only
+  // card counts, which is what hid the opening turn of every hand.
+  if(isCPU){
+    showSc('game');G.sel=[];updateGame();
+    if(G.optShowCPU||G.allCPUMode) setTimeout(()=>runCPUTurn(),G.allCPUMode?400:600);
+    else setTimeout(()=>runCPUInstant(),0);
     return;
   }
 
-  if(isCPU){
-    document.getElementById('ho-name').textContent=cp.name;
-    document.getElementById('ho-sub').textContent=`🤖 ${cp.name} is thinking...`;
-    document.getElementById('ho-btn').style.display='none';
-  } else {
+  // A lone human goes straight to the table. The round summary is available
+  // on demand rather than forced, so play keeps moving.
+  if(G.humanCount<=1||G.allCPUMode){
+    showSc('game');G.sel=[];clearCPUAction();updateGame();
+    if(G.phase==='first-discard') setSt(`You have ${cp.hand.length} cards — select one to discard (or meld first).`);
+    else setSt('Your turn — tap the draw pile, or tap the discard pile to pick it up.');
+    return;
+  }
+
+  {
     document.getElementById('ho-name').textContent=cp.name;
     document.getElementById('ho-sub').textContent=G.phase==='first-discard'&&G.currentIdx===G.handFirstPlayer?'You have 14 cards — discard one to start':phLbl();
     document.getElementById('ho-btn').textContent=`I'm ${cp.name} — show my hand`;
@@ -1035,8 +1031,6 @@ function showHandoff(){
   s+=`<div class="row"><span>Pile</span><span>${G.discardPile.length} cards${top?' · top: '+cLbl(top):''}</span></div>`;
   document.getElementById('ho-summary').innerHTML=s;
   showSc('handoff');
-
-  if(isCPU) setTimeout(()=>runCPUTurn(),1000);
 }
 
 function revealTurn(){
@@ -2629,12 +2623,26 @@ function cpuMeldAsync(cp,speed,onDone){
 // Replaces the old hard-coded type==='gambler' split: it's now a consequence
 // of the persona's bagelAmbition, and it switches off once the CPU has bailed
 // or already melded (at which point a Bagel is impossible anyway).
+// Whether this CPU is playing the hold-everything-for-a-Bagel game THIS hand.
+//
+// This used to be a hard threshold (`bagelAmbition > 0.7`), which made the
+// behaviour binary and unrealistic: only Everything (0.95) ever qualified, and
+// it then chased on 100% of hands, while Garlic (0.60) and Poppy (0.45) never
+// chased at all. Now the decision is made ONCE per hand with probability equal
+// to bagelAmbition, so appetite for risk varies both between characters AND
+// from hand to hand — much closer to how people actually play.
 function isBagelChasing(cp){
   const P=cp.persona;
   if(!P) return false;
   if(cp._bailedFromBagel) return false;
-  if(cp.hasEverMelded) return false;
-  return P.bagelAmbition>0.7;
+  if(cp.hasEverMelded) return false;       // a bagel is impossible once melded
+  return !!cp._goingForBagel;
+}
+
+// Called at the start of each hand for every CPU.
+function rollBagelIntent(p){
+  p._goingForBagel = !!(p.persona && Math.random() < p.persona.bagelAmbition);
+  p._bailedFromBagel = false;
 }
 
 // Points a wild earns standing in for a given declared card.
@@ -2720,10 +2728,9 @@ function cpuFindOneMeld(cp){
     }
   }
   if(!cands.length) return null;
-  // A bagel chaser with a nearly-complete hand should hold everything back.
-  if(P.bagelAmbition>0.7&&cp.hand.length>=8&&!cp.hasEverMelded){
-    if(Math.random()<P.bagelAmbition) return null;
-  }
+  // Committed to the bagel line this hand: hold everything back. (Bailing is
+  // handled separately — see gamblerDiscard's bail conditions.)
+  if(isBagelChasing(cp)) return null;
   const best=pickByScore(cands,c=>scoreMeld(cp,c),P.temperature);
   // Only decline a positive-value meld if this persona is genuinely holding out.
   if(best&&scoreMeld(cp,best)<0&&Math.random()<P.bagelAmbition) return null;
@@ -3583,7 +3590,7 @@ function restartHand(){
     p.checks=p.checks.filter(c=>c.hand!==handNum);
     p.bagels=p.bagels.filter(b=>b.hand!==handNum);
   });
-  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;});
+  G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;rollBagelIntent(p);});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
   G.pendingSummary=[];G.lastTurn=null;G.cpuTurnLog=[];G._pendingEndHand=null;
   cm('m-score');
