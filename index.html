@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-11 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-13 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-11</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-13</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -1883,11 +1883,28 @@ function confirmPickup(){
 // Enumerates every LEGAL way the wild(s) in `sel` could be assigned, so the
 // player can just tap the one they meant instead of typing a card name.
 // Returns [{assignments:[{id, decl}], label}], deduped. Respects the Q♠ rule.
-function wildAssignmentOptions(sel){
+// fixedIds: wild card ids that are ALREADY committed to an existing meld
+// (i.e. from openAdd, where `sel` = existing meld cards + newly-added
+// cards). These must NOT be treated as open to reassignment — a meld can
+// never be rearranged, so a wild already standing in for a specific card
+// owns that position permanently. Only wilds NOT in fixedIds are free to
+// explore placements for. Omitted/empty for the create-a-new-meld case
+// (openMeld), where every wild in the selection is genuinely unplaced.
+function wildAssignmentOptions(sel,fixedIds){
+  fixedIds=fixedIds||new Set();
   const wilds=sel.filter(c=>c.wild);
   if(!wilds.length) return [];
+  const freeWilds=wilds.filter(w=>!fixedIds.has(w.id));
+  if(!freeWilds.length) return []; // nothing left for the player to decide
   const saved=wilds.map(w=>w.declaredAs);
-  wilds.forEach(w=>w.declaredAs=null); // enumerate freely, restore below
+  // Only clear FREE wilds — a fixed wild's existing declaredAs must survive
+  // the enumeration so declRank() (used below and in tryRun) can lock its
+  // position. Clearing it, as the old code did unconditionally, let the
+  // enumeration silently explore arrangements that moved an already-melded
+  // wild — offering illegal options (and sometimes hiding legal ones behind
+  // a wrong or colliding option), which is what "didn't let me choose the
+  // suit" turned out to actually be: the options being generated were wrong.
+  wilds.forEach(w=>{if(!fixedIds.has(w.id))w.declaredAs=null;});
   const opts=[];
   try{
     const nat=sel.filter(c=>!c.wild);
@@ -1898,10 +1915,12 @@ function wildAssignmentOptions(sel){
       // redeemed, and it scores by the rank it stands in for, which is fixed
       // here. Only a JOKER needs a declaration in a set, because a redeemer
       // must later produce that exact card. So don't ask about deuces.
-      const needing=wilds.filter(w=>w.joker);
-      if(!needing.length) return [];   // deuces only → nothing to ask
+      const needing=wilds.filter(w=>w.joker&&!fixedIds.has(w.id));
+      if(!needing.length) return [];   // deuces only, or the joker is already fixed
       const rank=nat[0].rank;
       const used=new Set(nat.map(c=>c.suit));
+      // A fixed wild already occupies a suit — don't offer that suit again.
+      wilds.forEach(w=>{if(fixedIds.has(w.id)&&w.declaredAs)used.add(w.declaredAs.slice(-1));});
       // Offer unused suits first; if none remain, fall back to the repeated
       // ones (the deck has two of every card, and sets allow duplicate suits).
       let avail=SUITS.filter(su=>!used.has(su)&&!(rank==='Q'&&su==='♠'));
@@ -1922,19 +1941,45 @@ function wildAssignmentOptions(sel){
       const minNat=natVals[0],n=sel.length,wc=wilds.length;
       const hasQS=nat.some(c=>c.qs);
       const nameOf=r=>Object.keys(RO).find(k=>RO[k]===r)||String(r);
+      // Wilds with an existing declaration (fixed OR carried over from a
+      // prior confirm) must land on their EXACT rank, wherever that falls
+      // within the candidate range — NOT simply "whichever gap comes first",
+      // which is what array-order assignment assumed and got wrong whenever
+      // a fixed wild's rank wasn't the leftmost gap (e.g. extending a run
+      // LOW past a wild that's fixed further up).
+      const fixedWilds=wilds.filter(w=>declRank(w)!==null);
+      const freeW=wilds.filter(w=>declRank(w)===null);
       for(let start=minNat-wc;start<=minNat;start++){
         const end=start+n-1;
         if(start<3||end>14) continue;
         const byRank=new Map(nat.map(c=>[RO[c.rank],c]));
-        let wi=0,ok=true;const asg=[];
-        for(let r=start;r<=end;r++){
-          if(byRank.has(r)) continue;
-          if(wi>=wilds.length){ok=false;break;}
-          if(suit==='♠'&&r===12&&!hasQS){ok=false;break;} // no wild on Q♠
-          asg.push({id:wilds[wi].id,decl:nameOf(r)+suit});
-          wi++;
+        const gaps=[];
+        for(let r=start;r<=end;r++){ if(!byRank.has(r)) gaps.push(r); }
+        if(gaps.length!==wilds.length) continue;
+        const gapSet=new Set(gaps),usedGaps=new Set();
+        let ok=true;const asg=[];
+        for(const w of fixedWilds){
+          const dr=declRank(w);
+          if(!gapSet.has(dr)||usedGaps.has(dr)){ok=false;break;}
+          if(suit==='♠'&&dr===12&&!hasQS){ok=false;break;} // no wild on Q♠
+          usedGaps.add(dr);
+          asg.push({id:w.id,decl:nameOf(dr)+suit});
         }
-        if(ok&&wi===wilds.length) opts.push({assignments:asg});
+        if(ok){
+          const remaining=gaps.filter(r=>!usedGaps.has(r)).sort((a,b)=>a-b);
+          if(remaining.length!==freeW.length) ok=false;
+          else freeW.forEach((w,i)=>{
+            const r=remaining[i];
+            if(suit==='♠'&&r===12&&!hasQS){ok=false;return;}
+            asg.push({id:w.id,decl:nameOf(r)+suit});
+          });
+        }
+        if(ok){
+          // Only offer the FREE wilds as a choice — fixed ones are already
+          // settled and shouldn't be re-presented to the player.
+          const free=asg.filter(a=>!fixedIds.has(a.id));
+          if(free.length) opts.push({assignments:free});
+        }
       }
     }
   } finally { wilds.forEach((w,i)=>{w.declaredAs=saved[i];}); }
@@ -2290,7 +2335,8 @@ function openAdd(){
     const combo=[...m.cards,...sel];
     const v=valMeld(combo);
     if(!(v.valid&&v.type===m.type)) return;
-    const all=wildAssignmentOptions(combo);
+    const fixedIds=new Set(m.cards.filter(c=>c.wild).map(c=>c.id));
+    const all=wildAssignmentOptions(combo,fixedIds);
     const selIds=new Set(sel.filter(c=>c.wild).map(c=>c.id));
     if(!selIds.size) return;
     // Only the wilds being added are the player's to decide about here.
@@ -2410,11 +2456,11 @@ function doDiscard(){
     if(!gate.ok){
       setWarn(gate.msg);
       cp.calledThisTurn=false;cp.missedDeclaration=false;
-      autoDecl();endTurnHO();return;
+      autoDecl(cp.hand.length);endTurnHO();return;
     }
     cp.missedDeclaration=false;endHand(G.currentIdx);return;
   }
-  autoDecl();endTurnHO();
+  autoDecl(cp.hand.length);endTurnHO();
 }
 
 // Whether this player is allowed to go out on THIS discard.
@@ -2432,7 +2478,19 @@ function canGoOut(cp){
   return {ok:false,msg:'⚠ You must call cards on an earlier turn before going out. Your discard stands, but you cannot go out this turn.'};
 }
 
-function autoDecl(){
+// finalCount: the count the player WILL hold once this turn's discard is
+// accounted for.
+//   - omitted (default): a discard is still UPCOMING (called mid-turn, e.g.
+//     right after melding, before discarding) — so the answer is
+//     hand.length-1.
+//   - explicit number: the discard has ALREADY happened (called from
+//     doDiscard/cpuDoDiscard after the card is already removed from hand) —
+//     pass cp.hand.length directly, since that IS already the final count.
+// Conflating these two cases was the bug: calling with no argument AFTER a
+// discard had already happened subtracted 1 a second time, so a call of 3
+// silently became 2 (or a CPU's call of 2 silently became 1) on every single
+// discard, even with nothing actually wrong.
+function autoDecl(finalCount){
   const cp=G.players[G.currentIdx];
   if(!cp.hasEverMelded)return;
   // Invalidate a stale call only if the hand grew by MORE than the normal
@@ -2443,14 +2501,8 @@ function autoDecl(){
   // silently reset and then immediately re-declared (and re-announced) on
   // every single turn even when nothing had actually changed.
   if(cp.declared&&cp.hand.length>(cp.declaredCount||99)+1){cp.declared=false;cp.declaredCount=null;}
-  // Keep the call honest. A call always means "this many AFTER I discard", so
-  // the correct value at any point in the turn is hand.length-1. The old test
-  // compared hand.length against declaredCount, which is off by one: a player
-  // who called 3, then next turn drew to 4 and melded one card back to 3,
-  // would sit at hand.length===declaredCount and never update — yet after
-  // discarding they hold 2, not the 3 they are still advertising.
   if(cp.declared){
-    const should=cp.hand.length-1;
+    const should=(finalCount!==undefined)?finalCount:cp.hand.length-1;
     if(should>=1&&should<cp.declaredCount){
       cp.declaredCount=should;
       announceEvent(`📣 ${cp.name} updated call to ${should} card${should!==1?'s':''}`);
@@ -3174,7 +3226,7 @@ function cpuDoDiscard(cp,card,goOut){
   if(!goOut&&cp.missedDeclaration){
     cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
     cpuLog(`discarded ${cLbl(card)}`); // this path used to log nothing
-    cp.missedDeclaration=false;autoDecl();updateGame();cpuAfterDiscard();return;
+    cp.missedDeclaration=false;autoDecl(cp.hand.length);updateGame();cpuAfterDiscard();return;
   }
   cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);
   cpuLog(`discarded ${cLbl(card)}`);
@@ -3184,9 +3236,9 @@ function cpuDoDiscard(cp,card,goOut){
     if(gate.ok){endHand(G.currentIdx);return;}
     cpuLog('could not go out (had not called)');
     cp.calledThisTurn=false;cp.missedDeclaration=false;
-    autoDecl();updateGame();cpuAfterDiscard();return;
+    autoDecl(cp.hand.length);updateGame();cpuAfterDiscard();return;
   }
-  autoDecl(); // correct a stale call if this CPU melded further than its earlier call anticipated
+  autoDecl(cp.hand.length); // discard already happened — hand.length IS the final count now
   if(shouldCall(cp))cp.missedDeclaration=true;
   updateGame();cpuAfterDiscard();
 }
@@ -3756,8 +3808,33 @@ function showScores(){
     }).join('')}
   </tr>`;
 
-  html+=`</tbody></table></div>
-  <div style="margin-top:1rem;padding-top:0.75rem;border-top:0.5px solid rgba(0,0,0,0.12);">
+  html+=`</tbody></table></div>`;
+
+  // If the game has been fully tallied (G._tallied, set once in showFinal()),
+  // show the SAME end-game bonus and money-settlement breakdown here too —
+  // otherwise that information only ever existed on the dedicated final
+  // screen, and was invisible from every other place "Scores" is available
+  // (including the "Scores" button that still works after leaving that
+  // screen), which is what made it look like the tally had disappeared.
+  if(G._tallied){
+    html+=`<div style="margin-top:1rem;padding-top:0.75rem;border-top:2px solid rgba(0,0,0,0.15);">
+      <div style="font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Game over — final tally</div>`;
+    if(G._endBonusTo) html+=`<div style="font-size:12.5px;color:#555;margin-bottom:6px;">+200 end-game bonus to <strong>${G._endBonusTo}</strong> for going out on the final hand.</div>`;
+    const st=G._settlement||[];
+    html+=`<div style="font-size:11px;color:#666;margin-bottom:4px;">Final settlement — 5¢ per 500 points (${G.optRM?'rounded to nearest':'rounded down'})</div>`;
+    if(!st.length||st.every(x=>x.amt===0)){
+      html+=`<div style="font-size:12.5px;color:#555;">No money changed hands — every gap was under 500 points.</div>`;
+    } else {
+      html+=`<table class="score-table"><tbody>`;
+      st.forEach(x=>{html+=`<tr><td>${x.from} → <strong>${x.to}</strong></td><td style="text-align:right;color:#666;">${x.diff} pts = ${x.units}×500</td><td style="text-align:right;font-weight:500;">${x.amt.toFixed(1)}¢</td></tr>`;});
+      html+=`</tbody></table>`;
+    }
+    const byPoints=[...G.players].sort((a,b)=>b.fp-a.fp)[0];
+    const byMoney=[...G.players].sort((a,b)=>b.money-a.money)[0];
+    html+=`<div style="font-size:12.5px;color:#555;margin-top:6px;"><strong>${byPoints.name}</strong> won on points — <strong>${byMoney.name}</strong> won the money.</div></div>`;
+  }
+
+  html+=`<div style="margin-top:1rem;padding-top:0.75rem;border-top:0.5px solid rgba(0,0,0,0.12);">
     <div style="font-size:12px;font-weight:500;color:#666;margin-bottom:6px;">Debug</div>
     <div class="flex gap-8 wrap">
       <button class="btn small" onclick="restartHand()">↺ Restart hand</button>

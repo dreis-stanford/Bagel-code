@@ -111,6 +111,106 @@ after the fact from a static snapshot.
 
 ---
 
+## Resolved — adding a joker to an existing meld offered no/wrong suit choices (2026-08-09-13)
+
+**Reported:** adding a joker to an existing meld didn't let the player
+choose the suit.
+
+**Root cause:** `wildAssignmentOptions()` cleared the `declaredAs` of EVERY
+wild in the combined card set before enumerating — including wilds ALREADY
+committed to the existing meld, which have no business being reassigned
+(melds can never be rearranged; a wild permanently owns the position it was
+played into, per the 2026-08-08-17 fix). Two failures resulted:
+1. Reproduced directly: adding a joker to a run `8♠ 9♠ 2♣(=10♠, already
+   committed)` generated THREE raw options, two of which required silently
+   MOVING the already-fixed deuce (one even offered "10♠" as a choice for
+   the joker — a straight collision with the deuce's own fixed position).
+2. After a first fix pass correctly excluded the illegal options, only ONE
+   legitimate option (J♠, extending high) was found instead of the actual
+   two (7♠ extending low, or J♠ extending high) — because the run-branch's
+   gap-filling loop assigned wilds to gaps strictly by ARRAY POSITION, so
+   the fixed deuce (first in the array) was always tried against whichever
+   gap came first spatially, rather than being matched to its own specific
+   required rank wherever that fell in the range.
+
+**Fix:** `wildAssignmentOptions(sel, fixedIds)` takes an optional set of
+already-committed wild ids. Only non-fixed wilds have their declaration
+cleared for enumeration. The run branch was rewritten to match every fixed
+wild to its EXACT declared rank (via `declRank()`, mirroring the same-session
+fix already applied to `tryRun()`) regardless of array position, then fills
+remaining gaps with free wilds; a candidate start is only valid if every
+fixed wild's rank actually falls within it. The set branch similarly now
+only asks about non-fixed jokers and reserves a fixed wild's already-used
+suit. `openAdd()` passes the existing meld's wild ids as `fixedIds`;
+`openMeld()`/`cpuCommitMeld()` (brand-new melds, nothing pre-existing) are
+unaffected — call with no second argument, as before.
+
+Verified: the exact reported scenario now offers both legitimate options
+(7♠, J♠), the deuce is never re-offered, both options commit correctly via
+the real `commitAddToMeld` path with the deuce staying at 10♠, and a set
+variant (joker added to a set with an already-fixed deuce) correctly offers
+the one remaining unused suit. Regression-checked: brand-new melds
+(`openMeld`) and deuce-only/joker-only set behavior unchanged.
+
+---
+
+## Resolved — final tally invisible after leaving the game-over screen (2026-08-09-13)
+
+**Reported:** after leaving the end-of-game scoreboard, opening it again
+didn't show the full tally (bonuses and settlement).
+
+**Root cause:** the +200 end-game bonus and money-settlement breakdown were
+only ever rendered by `showFinal()`, directly into the dedicated final
+screen. `showScores()` — the general "Scores" modal reachable from anywhere,
+including after leaving that screen — only ever showed the per-hand history
+table. That information was simply never written anywhere else.
+
+**Fix:** `showScores()` now appends the same bonus/settlement breakdown
+whenever the game has been tallied (`G._tallied`, reusing the exact stored
+`G._settlement`/`G._endBonusTo` values `showFinal()` already computed once —
+no recalculation, so this can't double-charge anyone). Silent and unchanged
+mid-game. (One self-caught slip while implementing: the section was
+initially spliced INSIDE the per-hand table's own `<tbody>`, before its
+closing tag, which is invalid HTML nesting — a `<div>`/nested `<table>` can't
+legally sit inside a `<tbody>` without a `<tr><td>` wrapper. Moved outside
+the outer table's close before shipping, and verified via direct nesting
+inspection of the rendered output.)
+
+---
+
+## Resolved — call counts silently corrupted after EVERY discard (2026-08-09-12)
+
+**Reported:** human called 3, next turn showed 2; a CPU showed "called 1"
+while actually holding 2 cards; another CPU's call didn't appear until a
+turn later than expected.
+
+**Root cause:** `autoDecl()`'s correction formula, `should = cp.hand.length-1`,
+is only correct when a discard is still UPCOMING (called mid-turn, e.g. right
+after melding, before discarding — as in `confirmMeld`/`confirmAdd`, and the
+pre-discard check at the top of `cpuDiscard`). But it was ALSO called from
+`doDiscard()` and `cpuDoDiscard()` — both AFTER the card had already been
+removed from hand. At that point `hand.length` already equals the true final
+count for the turn, so subtracting 1 again silently double-decremented the
+call on every single discard: a call of 3 became 2, a CPU's call of 2 became
+1 while the player still visibly held 2 cards. This also explains the
+"delayed" call — a CPU that DID call correctly mid-turn had it corrupted
+before the next render, so the correct value was never actually seen.
+
+**Fix:** `autoDecl(finalCount)` now takes an explicit parameter. Omitted
+(mid-turn call sites, unchanged): defaults to `hand.length-1`, predicting the
+count after an upcoming discard. Passed explicitly (all four post-discard
+call sites, in `doDiscard` and `cpuDoDiscard`): callers now pass
+`cp.hand.length` directly, since the discard has already happened and that
+IS the final count — no second subtraction.
+
+Verified against all three reported symptoms directly (call stays at 3 after
+a matching discard; call stays at 2 matching an actual 2-card hand) plus a
+regression check confirming the pre-discard/mid-turn correction (used when a
+CPU or human melds further after already having called) still works exactly
+as before.
+
+---
+
 ## Resolved — regression from the previous fix: humans couldn't discard (2026-08-09-11)
 
 **The 2026-08-09-10 guard broke ordinary play.** It re-armed `G._turnEnded`
