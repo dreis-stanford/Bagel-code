@@ -111,6 +111,48 @@ after the fact from a static snapshot.
 
 ---
 
+## Resolved — massive card loss across hands after someone goes out (2026-08-09-14)
+
+**Reported:** after Poppy dreamed, no cards were visible for anyone
+(including Poppy's own melded cards). The NEXT hand also showed empty hands
+for everyone but the human (who had 1 card), the human was offered a pile
+pickup on what should have been a fresh 14-card opening turn, and the deck
+audit showed only 15/106 cards accounted for anywhere — draw pile, discard
+pile, or any hand. ~90 cards had simply vanished. The feedback report's
+stall log showed two CPUs (Plain and Poppy) stalled with `hand=0, drew=true`.
+
+**Root cause:** the watchdog only ever skipped its stall-check for
+`phase==='cut'` or `'over'`. But from the moment `endHand()` is called (the
+instant someone goes out) until the NEXT hand's cut screen actually appears,
+`G.phase` is still whatever it was during live play, and `G.currentIdx`
+still points at whoever just went out — with an EMPTY hand. This window can
+last as long as the human spends looking at the "X went out" pause (added in
+2026-08-09-9) and the following scores screen, both of which are entirely
+normal, unhurried moments — not a stalled turn.
+
+If the watchdog fired during this window, it saw a "CPU" with no real turn
+in progress and tried to recover it: with `G.drewCard` still stale-true from
+the winner's actual last turn, the recovery path skipped drawing and called
+`cpuDiscard()` directly on an EMPTY hand. That function's own empty-hand
+fallback is `if(!toDiscard){endHand(G.currentIdx);return;}` — calling
+`endHand()` a SECOND TIME for the SAME winner, re-entering the entire
+scoring/dealing cascade while the first pass might still be pending, or
+after the human had already moved past it. Two stalled players in the report
+(Plain and Poppy) is consistent with this repeating as `currentIdx` got
+shuffled around inside the broken recovery attempts.
+
+**Fix:** new `G._handEnding` flag, checked alongside the existing
+`phase==='cut'`/`'over'` early-return in `cpuWatchdogTick()`. Set at the very
+first line of `endHand()` and `endHandDead()` — before anything else runs —
+and cleared at the very first line of `dealHand()`, so the watchdog is
+completely inert for the ENTIRE span from "someone went out" through both
+the final-play pause and the end-of-hand scores screen, only resuming once a
+genuinely new hand has begun forming. Verified directly: with the flag set,
+45+ seconds of "staleness" produces zero watchdog action; once cleared for a
+real new hand, normal stall protection resumes exactly as before.
+
+---
+
 ## Resolved — adding a joker to an existing meld offered no/wrong suit choices (2026-08-09-13)
 
 **Reported:** adding a joker to an existing meld didn't let the player
