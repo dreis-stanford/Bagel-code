@@ -46,7 +46,8 @@ URL: https://dreis-stanford.github.io/Bagel-code
 - normDecl(s): normalizes suit input (3C→3♣, 10s→10♠)
 - CPU names auto-assigned: Conservative=Plain/Pumpernickel/Egg/Cinnamon-Raisin; Gambler=Poppy/Everything/Garlic/Onion
 - ANY mix of humans and CPUs is now supported (the old "all human / one human+CPU / all CPU" restriction is retired). `G.humanCount` drives flow.
-- Consolidated round summaries: every player's actions are logged via `cpuLog()` (humans included), flushed by `flushTurnLog()` at end of turn into `G.pendingSummary`, and shown to the next human ONCE on the handoff screen — then cleared in `revealTurn()`. Replaces the old per-CPU-turn "Continue ▶" ack: one tap per player per round.
+- Consolidated round summaries: every player's actions are logged via `cpuLog()` (humans included) and flushed by `flushTurnLog()` at end of turn into `G.pendingSummary`. **On demand, not forced** — play resumes immediately and the player taps the "Summary" button (or the handoff button) when they want it. Cleared once they begin their turn (draw or pile pickup). Replaces both the per-CPU "Continue ▶" ack and the forced summary screen.
+- Joker declarations and calls are recorded into the summary only. `announceEvent()` no longer opens a modal and `checkJokerNotifications()` is a no-op — together they were the cause of the same event being acknowledged several times. The joker REDEMPTION confirmation (shown to the redeemer only) is deliberately kept.
 - Summaries are deliberately NOT re-viewable. Making them so would grant perfect recall of the discard pile, which the rules forbid.
 - All-CPU watch mode uses a continuous scrolling feed (`#cpu-feed`, `feedPush()`) with no acknowledgements.
 - Discard history strip REMOVED from the handoff screen — only the top card is visible, per the rules.
