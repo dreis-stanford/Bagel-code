@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-14 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-15 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-14</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-15</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -2627,7 +2627,7 @@ function runCPUTurn(){
           if(!alive())return;
           setCPUAction(`🤖 ${cp.name} is discarding...`);
           setTimeout(()=>{if(alive())cpuDiscard(cp);},speed);
-        });
+        },turnId);
       }
     },speed);
   },speed);
@@ -3383,8 +3383,23 @@ function endTurnHO(){
 }
 
 function endHand(wi){
-  G._handEnding=true; // block the watchdog until the next hand actually begins
   const winner=G.players[wi];
+  // Going out categorically requires an EMPTY hand after the discard — there
+  // is no partial or near-out version of it. If this is ever reached with
+  // cards still in hand, it is always a bug (a false "went out" celebration
+  // was reported with the winner still visibly holding 2 cards), not a
+  // legitimate win — recover the turn normally instead of corrupting the
+  // game with an incorrect result.
+  if(winner&&winner.hand&&winner.hand.length>0){
+    console.warn('endHand() called with a non-empty hand — refusing to treat this as going out.',
+      {player:winner.name,handLength:winner.hand.length,phase:G.phase,currentIdx:G.currentIdx});
+    G.stallLog=G.stallLog||[];
+    G.stallLog.push({at:new Date().toISOString(),kind:'false-go-out-blocked',player:winner?winner.name:'?',
+      handLength:winner?winner.hand.length:-1,phase:G.phase});
+    endTurnHO();
+    return;
+  }
+  G._handEnding=true; // block the watchdog until the next hand actually begins
   const meldedCards=winner.melds.flatMap(m=>m.cards);
   const totalMelded=meldedCards.length;
   // Dream: went out all 13 at once on very first turn (no prior melds at start of this turn, turnCount===0)

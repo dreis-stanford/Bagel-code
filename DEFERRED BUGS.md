@@ -111,6 +111,50 @@ after the fact from a static snapshot.
 
 ---
 
+## Mitigated — false "went out" celebration with cards still in hand (2026-08-09-15)
+
+**Reported:** "Everything went out" screen appeared, but Everything visibly
+held 2 cards (J♦, Q♦) on the table underneath, and the round summary showed
+a normal turn (drew, melded 11 cards across three melds, discarded one) that
+mathematically ends at 2 cards remaining, not 0. Screenshot + feedback
+context both confirm: deck audit was clean (106/106, no missing cards) —
+this is a DIFFERENT bug from the 2026-08-09-14 card-loss issue, not a
+repeat of it.
+
+**Honest status:** the exact trigger was not conclusively reproduced from a
+static report — recomputing Everything's turn by hand from the logged
+actions shows `goOut` should correctly have evaluated false throughout
+(hand size 3 before the final discard, never 1). Rather than ship nothing
+while still hunting for the precise mechanism, two things went in:
+
+1. **A structural guard, which directly prevents the reported symptom
+   regardless of cause.** Going out categorically requires an empty hand —
+   there is no partial version. `endHand(wi)` now checks this immediately:
+   if the "winner" still has cards, it's always a bug, never a legitimate
+   win. It logs the anomaly (player, hand length, phase, currentIdx) into
+   `G.stallLog` — visible in the next Feedback report — and recovers via a
+   normal `endTurnHO()` instead of corrupting the game with a false
+   celebration. Verified: a non-empty-hand call is blocked and recovered
+   cleanly; a genuine empty-hand win still proceeds to `showFinalPlay()`
+   exactly as before.
+2. **A real gap closed as a hardening measure**, found while investigating:
+   the normal-turn (non-first-discard) call to `cpuMeldAsync()` inside
+   `runCPUTurn()` was missing its `turnId` argument — meaning that specific
+   recursive melding chain's OWN internal stale-turn check
+   (`turnId!==undefined&&turnId!==G.cpuTurnId`) was silently skipped for
+   every turn except a hand's very first opening turn. (The final
+   discard step still had a layer of protection via the enclosing
+   `alive()` closure, so this was incomplete rather than absent protection.)
+   Now passes `turnId` consistently with the first-discard path.
+
+**If this recurs:** the next Feedback report will contain a
+`false-go-out-blocked` stall-log entry with the exact player, hand length,
+phase, and currentIdx at the moment it was caught — that should be enough to
+pin down the precise trigger without needing to reconstruct it by hand from
+turn logs.
+
+---
+
 ## Resolved — massive card loss across hands after someone goes out (2026-08-09-14)
 
 **Reported:** after Poppy dreamed, no cards were visible for anyone
