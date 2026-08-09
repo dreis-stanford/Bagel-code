@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-13 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-14 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-13</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-14</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -538,6 +538,7 @@ function startDebugDeal(){
     optRM:document.getElementById('opt-rm').checked,
     optShowCPU:document.getElementById('opt-show-cpu')?.checked||false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
+    _handEnding:false,
     log:[],snapshot:null,savedDeck:null,cutterIdx:0,cpuTurnId:0,jokerNotifications:[],awaitingCPUAck:false,
     keptByCutter:[],cutterBot:null,topPart:[],botPart:[]
   };
@@ -812,6 +813,7 @@ function startGame(){
     optRM:document.getElementById('opt-rm').checked,
     optShowCPU:document.getElementById('opt-show-cpu')?.checked||false,
     cpuSpeed:+(document.getElementById('opt-cpu-speed')?.value||800),
+    _handEnding:false,
     log:[],       // hand history entries
     snapshot:null, // state at start of current hand (for undo/restart)
     jokerNotifications:[],awaitingCPUAck:false,
@@ -834,6 +836,7 @@ function restoreSnapshot(snap){
 }
 
 function dealHand(){
+  G._handEnding=false; // a new hand is genuinely starting — watchdog may resume
   G.snapshot=snapshotPlayers(); // save state before this hand
   G.players.forEach(p=>{p.hand=[];p.melds=[];p.declared=false;p.declaredCount=null;p.hasEverMelded=false;p.turnCount=0;p.missedDeclaration=false;p.handOrder=null;p.hadMeldsAtTurnStart=false;p.calledThisTurn=false;p._bailedFromBagel=false;p._gamblerBagelCard=null;p._discardedThisTurn=false;rollBagelIntent(p);});
   G.sel=[];G.drewCard=false;G.mustMeldTopId=null;G.mustNaturalIds=null;G.phase='cut';
@@ -3265,6 +3268,19 @@ function cpuWatchdogTick(){
   try{
     if(!G||!G.players||!G.players.length) return;
     if(G.phase==='cut'||G.phase==='over') return;
+    // Between someone going out (endHand) and the next hand's cut screen
+    // appearing, G.phase is still whatever it was during live play and
+    // G.currentIdx still points at whoever just went out — with an EMPTY
+    // hand. The human may spend any amount of time on the "X went out"
+    // pause or the end-of-hand scores screen; there is no actual CPU turn
+    // in progress here at all. Without this guard the watchdog would try to
+    // "recover" that non-existent turn — cpuDiscard() on an empty hand falls
+    // through to calling endHand() a SECOND time for the same winner,
+    // re-entering the whole scoring/dealing cascade while the first pass may
+    // still be pending. This is the mechanism behind a real reported bug:
+    // two consecutive hands losing nearly the entire deck (hands/melds wiped
+    // to empty, ~90 cards unaccounted for) right after a Dream/going-out.
+    if(G._handEnding) return;
     const cp=G.players[G.currentIdx];
     if(!cp||!cp.type||cp.type==='human') return;      // human turns may idle forever
     if(!G.lastProgressTs){ noteProgress(); return; }
@@ -3367,6 +3383,7 @@ function endTurnHO(){
 }
 
 function endHand(wi){
+  G._handEnding=true; // block the watchdog until the next hand actually begins
   const winner=G.players[wi];
   const meldedCards=winner.melds.flatMap(m=>m.cards);
   const totalMelded=meldedCards.length;
@@ -3453,7 +3470,7 @@ function proceedToScores(){
   if(fn) fn();
 }
 
-function endHandDead(){G.dealerIdx=(G.dealerIdx+1)%G.players.length;G.hand++;alert('Draw pile ran out — dead hand. No scoring. Deal passes left.');dealHand();}
+function endHandDead(){G._handEnding=true;G.dealerIdx=(G.dealerIdx+1)%G.players.length;G.hand++;alert('Draw pile ran out — dead hand. No scoring. Deal passes left.');dealHand();}
 
 function showEndHand(hs,wi,isBagel,isDream,hasWilds,allBelow,allAbove){
   showSc('endhand');
