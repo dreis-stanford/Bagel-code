@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-9 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-10 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-9</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-10</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -555,6 +555,7 @@ function startDebugDeal(){
   G.drawPile=unused.slice(ui);
   G.savedDeck=[...G.drawPile];
   G.currentIdx=0;G.handFirstPlayer=0;G.phase='first-discard';
+  G._turnEnded=false;
   deck.forEach(c=>delete c._used);
 
   showSc('game');G.sel=[];updateGame();
@@ -981,6 +982,7 @@ function completeCut(){
     for(let j=0;j<target&&pool.length>0;j++) G.players[idx].hand.push(pool.shift());
   }
   G.drawPile=pool;G.discardPile=[];G.currentIdx=fi;G.phase='first-discard';
+  G._turnEnded=false;
   showHandoff();
 }
 
@@ -2392,7 +2394,7 @@ function doDiscard(){
   if(isSp(card)&&!goOut){setWarn(`${cLbl(card)} is special — can only discard it when going out.`);return;}
   if(G.phase==='first-discard'){
     const goOutFirst=cp.hand.length===1;
-    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];cpuLog(`discarded ${cLbl(card)}`);cpuLog(`discarded ${cLbl(card)}`);
+    cp.hand=cp.hand.filter(c=>c.id!==card.id);G.discardPile.push(card);G.sel=[];cpuLog(`discarded ${cLbl(card)}`);
     if(goOutFirst){endHand(G.currentIdx);return;}
     endTurnHO();return;
   }
@@ -2521,6 +2523,8 @@ function doUndeclare(){const cp=G.players[G.currentIdx];cp.declared=false;cp.dec
 
 // ── CPU TURN ENGINE ──────────────────────────────────────────────
 function runCPUInstant(){
+  noteProgress();
+  G._turnEnded=false; // arm the duplicate-advance guard for the turn now starting
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
   cpuLogReset();
@@ -2537,6 +2541,7 @@ function runCPUInstant(){
 
 function runCPUTurn(){
   noteProgress();
+  G._turnEnded=false; // arm the duplicate-advance guard for the turn now starting
   cpuLogReset();
   const cp=G.players[G.currentIdx];
   if(!cp||cp.type==='human') return;
@@ -3160,6 +3165,7 @@ function cpuDoDiscard(cp,card,goOut){
     return;
   }
   cp._discardedThisTurn=true;
+  noteProgress(); // see cpuWatchdogTick — this is what prevents the race
   if(!card){
     // No card to discard — shouldn't happen, but handle gracefully
     console.warn('cpuDoDiscard called with no card');
@@ -3256,6 +3262,21 @@ function ackCPUDiscard(){
 // ─────────────────────────────────────────────────────────────────
 
 function endTurnHO(){
+  // Refuse to advance the turn twice. A long synchronous CPU computation
+  // (the opening turn over a 14-card hand is the worst case) blocks the
+  // watchdog's timer from firing AT ALL while it runs — JS is single
+  // threaded. The moment that computation finishes, the discard is already
+  // done and its own endTurnHO() is already scheduled — but the watchdog,
+  // having been blocked the whole time, immediately sees a huge apparent
+  // "idle" gap and calls endTurnHO() directly too. Both calls then fire in
+  // quick succession, advancing currentIdx TWICE for one turn and silently
+  // skipping whoever was next. This flag makes a second call for the same
+  // turn a safe no-op instead.
+  if(G._turnEnded){
+    console.warn('endTurnHO: ignoring a duplicate call for the same turn (currentIdx='+G.currentIdx+')');
+    return;
+  }
+  G._turnEnded=true;
   noteProgress();
   G.pickedUpCount=0;
   // A wild in HAND represents nothing — only a melded wild has a declaration.
@@ -3678,6 +3699,7 @@ function restartHand(){
     for(let j=0;j<target&&pool.length>0;j++) G.players[idx].hand.push(pool.shift());
   }
   G.drawPile=pool;G.discardPile=[];G.currentIdx=fi;G.phase='first-discard';
+  G._turnEnded=false;
   showHandoff();
 }
 

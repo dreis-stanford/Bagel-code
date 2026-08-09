@@ -111,6 +111,50 @@ after the fact from a static snapshot.
 
 ---
 
+## Resolved — CPU turn freeze fully diagnosed: root cause found (2026-08-09-10)
+
+**The round summary evidence (Poppy, Everything, Garlic each appearing
+TWICE before the human's turn) pinpointed the exact mechanism.** JS is
+single-threaded: a long SYNCHRONOUS computation (the opening turn's meld
+search over a 14-card hand — the largest, most expensive hand size in the
+game) blocks the watchdog's timer from firing AT ALL while it runs. The
+moment that computation finally finishes, the discard has already happened
+and `cpuAfterDiscard()` has already scheduled its own `endTurnHO()` via
+`setTimeout`. But the watchdog — having been completely blocked the whole
+time — gets its first chance to run right as control returns to the event
+loop, sees a huge apparent "idle" gap (the entire blocking duration, since
+nothing had updated the progress timestamp during it), and because
+`cp._discardedThisTurn` is now true, calls `endTurnHO()` DIRECTLY. That
+produces TWO pending calls to `endTurnHO()` for one turn — the watchdog's
+immediate one and the originally-scheduled one — both of which fire in quick
+succession, advancing `currentIdx` by 2 instead of 1 and silently skipping
+whoever was next. Exactly matches the reported doubled CPU turns.
+
+**Two-layer fix:**
+1. **Root cause** — `noteProgress()` is now called the moment a discard is
+   recorded (inside `cpuDoDiscard`), which happens synchronously as part of
+   the SAME blocking computation. Since the watchdog cannot run until that
+   computation returns control to the event loop, by the time it finally
+   checks, the timestamp is already fresh — it correctly sees "not actually
+   idle" and takes no action. A slow-but-successful turn no longer looks like
+   a stalled one.
+2. **Defense in depth** — `endTurnHO()` now refuses to advance `currentIdx` a
+   second time for the same turn (`G._turnEnded` guard), re-armed only when
+   real CPU turn processing genuinely begins (`runCPUInstant`/`runCPUTurn`),
+   not merely after the previous turn ends — an earlier version of this
+   guard reset itself immediately after succeeding, which reopened the
+   window right away and was caught by testing before shipping. This
+   protects against ANY future duplicate-call path, not just this specific
+   race.
+
+Verified by directly simulating the exact race (two `endTurnHO()` calls with
+no real turn processing between them → second call blocked, nobody skipped)
+and the legitimate case (a real turn processes, then ends → advances
+normally). Also fixed in the same pass: a duplicate `cpuLog('discarded...')`
+call in the human's first-discard path (cosmetic double-line in the summary).
+
+---
+
 ## Resolved — stale call counts & invisible final settlement (2026-08-09-9)
 
 - **A call didn't update when the card count changed.** `autoDecl()` compared
@@ -133,39 +177,6 @@ after the fact from a static snapshot.
   double-counted both. Now guarded by `G._tallied`.
   The status line also now names the points winner and the money winner
   separately, since the rules make money the actual win condition.
-
----
-
-## PARTLY RESOLVED — CPU turn freeze: cause narrowed, damage stopped (2026-08-09-8)
-
-**The watchdog's stall log finally produced evidence.** Two events, both:
-`cpu-turn-stalled | Garlic(cpu) phase=first-discard idle≈45s drew=false`.
-So the freeze happens on the OPENING turn of a hand, before any draw — not
-randomly mid-hand as previously assumed.
-
-**The reported symptom was the watchdog, not the freeze.** On a stall it
-called `runCPUTurn()` again, restarting a turn that may already have been
-partway through. That replayed draws, melds and discards — which is why the
-human found five cards already on the pile and turns apparently skipped. So
-the recovery was doing more visible harm than the original hang.
-
-**Fixes (defensive; underlying hang not yet definitively reproduced):**
-- `cp._discardedThisTurn` — a CPU may discard only once per turn. Cleared at
-  turn end and at deal. This alone stops the duplicate-turn damage.
-- `cpuMeldAsync` now carries the `turnId` of the turn that started it and
-  drops itself if superseded, so a stale async chain can never act against a
-  newer turn's state.
-- The watchdog recovers according to how far the turn actually got: if the
-  CPU already discarded it just completes the hand-off; otherwise it finishes
-  the turn directly (draw if needed, then discard) instead of re-running the
-  whole chain. Falls back to `endTurnHO()` if that throws.
-- Stall entries now also record `discarded`, `melds` and `bagel`.
-
-**Still to determine:** why the opening-turn chain dies in the first place.
-The next stall report will show `discarded:` and `bagel:`, which should
-distinguish a chain that never started from one that died mid-way. Suspicion:
-something in the first-discard branch of `runCPUTurn` (the only turn type
-that skips the draw entirely and calls `cpuMeldAsync` directly).
 
 ---
 
