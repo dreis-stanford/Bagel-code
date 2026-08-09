@@ -143,6 +143,50 @@ add-to-existing pass instead of retrying.
 
 ---
 
+## Resolved — bagel chaser melded anyway; melding into a stuck position (2026-08-09-7)
+
+- **"Everything" (the Dreamer) melded on the opening hand** despite being
+  committed to the bagel line. The opening (first-discard) turn runs through
+  `cpuMeld()`, which used `cpuFindBestMeld()` — a plain first-match search
+  with NO bagel check and no persona scoring whatsoever. So the bagel intent,
+  the meld scoring, the split preference and the wild-value logic were all
+  bypassed on that turn. `cpuMeld()` now returns immediately when
+  `isBagelChasing(cp)` and otherwise uses the scored `cpuFindOneMeld()`.
+  `cpuFindBestMeld()` deleted so nothing reaches for it again.
+- **A player could meld down to one card without being able to go out.**
+  Reported: melded everything but the discard, discarded, and the hand simply
+  continued — leaving an empty hand having achieved nothing. The existing
+  guard only blocked melding ALL cards (leaving zero). But leaving exactly ONE
+  is equally broken when you haven't called: discarding it empties your hand,
+  which IS going out, and going out is blocked without a prior call. New
+  shared `meldLeavesYouStuck(cp,count)` blocks both cases in `confirmMeld`
+  and `confirmAdd`, and CPU meld selection filters candidates through it too.
+  Correctly still ALLOWS melding to one card when the player has called on an
+  earlier turn, or is on a bagel/dream hand (calling never applied).
+
+---
+
+## Resolved — hidden opening turn & free Perfect Cut (2026-08-09-5)
+
+- **A CPU's turn showed a "🤖 X is thinking..." cover instead of the table.**
+  `showHandoff()` handled CPU turns only inside the `allCPUMode` branch;
+  every other CPU turn fell through to the pass-the-device cover, which shows
+  nothing but card counts. Most visible on the opening turn of a hand, where
+  the first player is often a CPU and its whole turn happened behind that
+  screen. A CPU now NEVER gets the cover — its turn always plays out on the
+  game screen (visibly, or instantly when "Show CPU cards" is off). The cover
+  is reserved for passing between multiple humans, which is its actual job.
+- **The cut defaulted exactly onto the Perfect Cut with 4 players.** The
+  slider started at `deckLen/2` = 53, and with 4 players the perfect cut is
+  13×4+1 = 53 cards below — the midpoint of a 106-card deck. So the default
+  position WAS the bonus, handing out a free Check every hand if the optional
+  rule was on. The CPU auto-cut was centred on the same value. New
+  `suggestCutPos(deckLen,n)` randomises the starting position and explicitly
+  steers at least 3 cards clear of the perfect cut. Verified over 20,000
+  trials at 3, 4 and 5 players: never lands on it, while still varying.
+
+---
+
 ## Resolved — melds could be illegally rearranged (2026-08-08-17)
 
 **Reported:** Egg picked up the pile with 8♠ and added it to its meld

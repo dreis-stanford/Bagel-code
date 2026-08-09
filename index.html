@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-6 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-7 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-6</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-7</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -2035,13 +2035,8 @@ function confirmMeld(){
 
   const v=valMeld(sel);
   if(!v.valid){document.getElementById('meld-err').textContent=v.msg;return;}
-  // Rules: "You must always end your turn with a discard — you cannot go out
-  // by playing your last card to a meld." Melding the entire hand would also
-  // soft-lock the turn, since discarding then has no card available.
-  if(sel.length>=cp.hand.length){
-    document.getElementById('meld-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
-    return;
-  }
+  const blocked=meldLeavesYouStuck(cp,sel.length);
+  if(blocked){document.getElementById('meld-err').textContent=blocked;return;}
   const keepIds=chosen?chosen.assignments.map(a=>a.id):[];
   if(!commitNewMeld(cp, sel, keepIds)){document.getElementById('meld-err').textContent='Not a valid meld.';return;}
   cpuLog(`melded ${cpuLogCards(sel)}`);
@@ -2322,12 +2317,8 @@ function confirmAdd(mi){
   if(G.redeemMustMeld&&!sel.some(c=>c.id===G.mustMeldTopId)){
     document.getElementById('add-err').textContent='Must include the redeemed Joker!';return;
   }
-  // Rules: must always retain a card to discard — cannot go out by adding
-  // your last card to a meld.
-  if(sel.length>=cp.hand.length){
-    document.getElementById('add-err').textContent='You must keep at least one card to discard — you cannot go out by melding your last card.';
-    return;
-  }
+  const blockedAdd=meldLeavesYouStuck(cp,sel.length);
+  if(blockedAdd){document.getElementById('add-err').textContent=blockedAdd;return;}
   // Apply the wild placement the player tapped, if any.
   const chosenAdd=(_addWildOpts[mi]||[])[_addWildIdx[mi]||0];
   if(chosenAdd) chosenAdd.assignments.forEach(a=>{
@@ -2728,6 +2719,11 @@ function cpuFindOneMeld(cp){
     }
   }
   if(!cands.length) return null;
+  // Never meld into the stuck position: down to one card when you cannot
+  // legally go out (see meldLeavesYouStuck).
+  const safe=cands.filter(c=>!meldLeavesYouStuck(cp,c.length));
+  if(!safe.length) return null;
+  cands.length=0;cands.push(...safe);
   // Committed to the bagel line this hand: hold everything back. (Bailing is
   // handled separately — see gamblerDiscard's bail conditions.)
   if(isBagelChasing(cp)) return null;
@@ -2842,11 +2838,16 @@ function cpuDraw(cp){
 }
 
 function cpuMeld(cp){
+  // Committed to the bagel line this hand? Then meld nothing at all.
+  // This guard was missing, and because cpuMeld() is what runs during the
+  // opening (first-discard) turn, a bagel chaser dealt the 14-card opening
+  // hand would meld anyway — exactly contradicting its intent.
+  if(isBagelChasing(cp)) return;
   // Find and play all valid melds greedily
   let melded=true;
   while(melded){
     melded=false;
-    const meld=cpuFindBestMeld(cp);
+    const meld=cpuFindOneMeld(cp);
     if(meld){
       const v=valMeld(meld);
       if(v.valid){
@@ -2875,17 +2876,8 @@ function cpuMeld(cp){
   }
 }
 
-function cpuFindBestMeld(cp){
-  const hand=cp.hand;
-  // Try all combinations of 3 and 4 cards
-  for(let size=4;size>=3;size--){
-    const combos=combinations(hand,size);
-    for(const combo of combos){
-      if(valMeld(combo).valid) return combo;
-    }
-  }
-  return null;
-}
+// (cpuFindBestMeld removed — it was a first-match search that bypassed all
+// persona scoring AND the bagel check. Use cpuFindOneMeld instead.)
 
 function combinations(arr,k){
   if(k===0) return [[]];
@@ -2948,6 +2940,26 @@ function twoCardTrapPenalty(cp,card){
   if(addable===2) return 0;                      // genuinely fine — both fit
   if(addable===1) return 30;                     // stuck on one card
   return 55;                                     // neither fits: cannot go out
+}
+
+// Returns an error message if melding `count` cards would leave the player
+// unable to legally finish the turn, or '' if the meld is fine.
+//
+// Two ways to get stuck:
+//   • melding everything leaves no card to discard at all;
+//   • melding down to exactly ONE card means the discard empties your hand,
+//     which IS going out — and if you haven't called, going out is blocked,
+//     so you'd be left holding nothing having achieved nothing.
+function meldLeavesYouStuck(cp,count){
+  const remaining=cp.hand.length-count;
+  if(remaining<1)
+    return 'You must keep at least one card to discard — you cannot go out by melding your last card.';
+  if(remaining===1){
+    const gate=canGoOut(cp);
+    if(!gate.ok)
+      return 'That would leave you one card, and discarding it would mean going out — which you cannot do yet. '+gate.msg;
+  }
+  return '';
 }
 
 function scoreDiscard(cp,card){
