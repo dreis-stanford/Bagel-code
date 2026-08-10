@@ -1,5 +1,5 @@
 # BAGEL
-### Official Rules of the Family Card Game
+### Official Rules—According to Mohel (no tips, just the rules)
 
 ---
 
