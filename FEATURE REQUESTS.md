@@ -37,26 +37,105 @@ special cases. Revisit `openMeld()`/`confirmMeld()`/`valMeld()` together.
 *Awaiting user's concrete before/after examples to scope the actual target
 behavior.*
 
-### 2. Easter egg: "Grandma Goldie" / the Afikoman
-If a player is named Goldie, Grandma, Grandma Goldie, etc. (case-insensitive,
-likely a fuzzy/substring match rather than exact), trigger a special mode in
-her honor — playful nod to the Afikoman (the hidden piece of matzah in the
-Passover seder), acknowledging the joke that bagels aren't kosher for
-Passover. Pieces to design/build:
-- **Name-detection trigger** — needs a matching rule (exact match list vs.
-  substring vs. fuzzy) decided with the user; likely checked at player setup
-  time (`setPC`/name entry).
-- **Special sayings** — a bank of "things Grandma Goldie used to say,"
-  surfaced contextually (e.g. on specific game events — going out, drawing a
-  joker, getting bageled, winning, etc.). Need the user to supply the actual
-  sayings and ideally which circumstance each belongs to.
-- **Special "80th birthday" deck** — a themed/alternate deck skin tied to
-  this mode. Needs scope clarified: is this purely cosmetic (custom card
-  back/face art or color theme) or does it imply different deck composition?
-  Default assumption until told otherwise: cosmetic skin only, same 106-card
-  structure and rules.
-*Awaiting user's specific sayings, trigger circumstances, and confirmation
-on deck scope before implementation.*
+### 2. Easter egg: "The Afikomen" (Grandma Goldie)
+
+**Renamed from "Grandma Goldie" to "The Afikomen"** — named for the hidden
+piece of matzah in the Passover seder, which fits Bagel better and plays on
+the running joke that bagels aren't kosher for Passover.
+
+**NOTE — content lost once already.** An earlier round of sayings/details was
+discussed in a prior session but never got written into this file, and
+turned out to be unrecoverable (existed only in that session's chat, not in
+any project file). Redone from scratch below. **Lesson: write content into
+this file as soon as it's given, not after a "let's finalize this later."**
+
+**Trigger — SHIPPED (build 2026-08-09-16, refined 2026-08-09-19 and
+2026-08-09-20).** `isGoldieName(name)` matches, case-insensitively: "Goldie"
+alone; "Grandma Goldie" / "Grandma G" / "Grandma G."; the "Gramma" spelling
+of the same; and "GG" (her initials) alone or paired with
+Goldie/Grandma/Gramma. Does NOT match near-misses (Golda, Goldman, Grandpa
+Goldie, bare "Grandma" or "G", "GGG", "G G"). Granny/Nana variants were
+removed in 2026-08-09-19 after the user clarified she wasn't called
+either — those are different words for a grandmother in general, not
+variants of what THIS Grandma Goldie was actually called, and keeping them
+risked matching an unrelated player's own grandmother by coincidence.
+Checked only for HUMAN players, at game start, setting `player.isGoldie=true`
+(case normalization means any capitalization of any matching form works).
+Verified against 28 cases (19 matches across case variants, 9 correct
+rejections).
+
+**Content bank scaffolded, EMPTY — still needed from the user:**
+`AFIKOMEN_SAYINGS` in index.html has keys for `goOut`, `bagel`, `dream`,
+`joker`, `win`, `loss`, `general`, each meant to hold a list of things
+Grandma Goldie used to say at that moment. `afikomenSaying(event)` picks a
+random one from the matching key (falling back to `general`). Nothing is
+wired to actually CALL `afikomenSaying()` from game events yet — that's the
+next step once there's content to surface, so wiring can be tested against
+real sayings rather than placeholders.
+
+**Sayings SHIPPED (build 2026-08-09-17)**, each wired to a real game
+moment, not just stored as text:
+
+- **"Deal in Jail"** — fires when Goldie is dealt a lousy opening hand.
+  `isRoughHand()`: high average in-hand penalty per card (≥7) AND few
+  near-melds available (pairs, adjacent-suit cards). Checked once, right
+  after dealing.
+- **"You Schmeissed me"** — fires when someone ELSE goes out and Goldie is
+  left holding ≥40 points of penalty in hand. Checked in `endHand()` before
+  hands get cleared for scoring.
+- **"Garbage picker"** — fires when ANOTHER player picks up a pile that's
+  either topped by a low-value card or is a genuinely scattered mismatch
+  (many different ranks AND many different suits — NOT just "3+ suits",
+  which would wrongly flag an ordinary same-rank set). Wired at all three
+  pile-pickup commit sites (human `confirmPickup`, both CPU pickup paths in
+  `cpuDraw`).
+- **"Points is points"** — the SAME garbage-pile heuristic, but said about
+  Goldie's own pickup when SHE does it; also fires when Goldie melds a
+  low-value set/run (≤15 pts) within her first two turns of a hand, per "or
+  melds small cards when she could have waited."
+- **"Who's turn is it" / "Play already"** — impatience when the game has
+  been idle ≥25s and it is NOT Goldie's own turn (reacting to someone else
+  being slow, not her own thinking time). A 20s cooldown prevents spamming.
+  Separate lightweight interval, piggybacking on the existing
+  `G.lastProgressTs` tracking; wrapped in try/catch so it can never affect
+  real gameplay even if something about it misbehaves.
+
+Display: a small toast (`#goldie-quip`, sidebar) reading `👵 "<line>"`,
+auto-hiding after 5 seconds. Non-blocking — never gates play the way
+warnings/errors do.
+
+Heuristics were bugged on first pass and caught by testing before shipping:
+the garbage-pile detector originally flagged any pile touching 3+ suits as
+"mismatched," which incorrectly caught ordinary same-rank sets (a set of
+Kings necessarily spans multiple suits) — fixed to require BOTH scattered
+ranks AND scattered suits together.
+
+**Still open:**
+1. Confirmation the "100th birthday" deck (corrected from an earlier "80th" guess — the actual photo is dated 2015, "Celebrate 100!") is a cosmetic skin only (default
+   assumption) rather than a different card composition — not yet built.
+2. All five heuristic thresholds (7 avg-penalty, ≤2 near-melds, 40pt stuck
+   threshold, ≤15pt meld, 25s/20s impatience timing) are first-guess tuning,
+   not validated against real play — expect to adjust once these are seen
+   firing (or not firing) in an actual game.
+3. Whether `isGoldie` should ever affect a CPU (currently human-only,
+   matching the original framing that Goldie is a human player).
+
+**Intro popup — SHIPPED (build 2026-08-09-18).** The user's photo of Grandma
+Goldie holding a custom "Celebrate 100!" deck (Sept 5, 2015 — corrects the
+earlier 80th-birthday guess) is now embedded directly in index.html as a
+base64 data URI (resized to 900px max, ~118KB, so the single-file deploy
+model keeps working with no separate asset upload needed). Shows once,
+right when `startGame()` confirms a Goldie player is actually in the game —
+not on every hand, just that first moment of discovery. Dismissible via
+"Deal me in."
+
+**Still needed:** more images (user mentioned more may come later — the
+photo is saved at `assets/goldie-popup-1.jpg` in the working session, not
+yet a gallery/rotation, just the one). Also still need actual card face/back
+art for the "100th birthday" deck skin itself — the photo shows her holding
+the custom deck at an angle, which isn't usable as print-ready card art
+directly; either a flatter photo of a single card, or a description of the
+design to build a similar-spirited digital version, would unblock that.
 
 ### 4. UI redesign — make it look like a real card game (DEFERRED)
 
