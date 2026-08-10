@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- BUILD: 2026-08-09-23 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
+<!-- BUILD: 2026-08-09-26 — bump this string (and the visible footer below) every time you push, so you can confirm GitHub Pages is actually serving the latest version instead of a stale cached copy. View Page Source (or curl the URL) to check this comment; the small text at the bottom of the home screen shows the same value without needing dev tools. -->
 <html>
 <head>
 <meta charset="UTF-8">
@@ -140,7 +140,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
     <button class="btn primary" style="width:100%" onclick="startGame()">Deal first hand</button>
     <button class="btn" style="width:100%;margin-top:8px;" onclick="showDebugSetup()">🛠 Debug deal</button>
   </div>
-  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-23</div>
+  <div style="text-align:center;font-size:11px;color:#999;margin-top:1rem;">build 2026-08-09-26</div>
 </div>
 
 <!-- DEBUG SETUP SCREEN -->
@@ -359,7 +359,7 @@ input[type=text], select { padding: 7px 10px; border: 0.5px solid rgba(0,0,0,0.3
 <div id="m-rules" class="modal-overlay" style="display:none;">
   <div class="modal" style="max-width:500px;max-height:85vh;display:flex;flex-direction:column;">
     <div class="flex between center mb-1">
-      <h2 id="rules-title">How to Play</h2>
+      <h2 id="rules-title">How to Play <span style="font-size:12px;font-weight:400;color:#888;">— According to Mohel</span></h2>
       <button class="btn small" onclick="cm('m-rules')">Close</button>
     </div>
     <!-- Tab buttons -->
@@ -842,11 +842,6 @@ function renderPlayerInputs(n){
           <option value="human">👤 Human</option>
           <option value="cpu:random">🎲 Random CPU</option>
           ${cpuOpts}
-          <!-- Hidden unless The Afikomen is triggered — Grandma Goldie playing
-               as a CPU isn't one of the ordinary named characters, so this
-               option only becomes meaningful (and gets selected) via the
-               Human/CPU prompt below, not by browsing the dropdown. -->
-          <option value="cpu:goldie" style="display:none;">🤖 Grandma Goldie</option>
         </select>
       </div>
       <div id="goldie-prompt-${i}" style="display:none;margin-top:4px;padding:6px 8px;background:#fff8e6;border:1px solid #e8d38a;border-radius:6px;font-size:12px;color:#6b5a1e;">
@@ -874,7 +869,25 @@ function checkGoldiePrompt(idx){
 function setGoldiePlayMode(idx,mode){
   const sel=document.getElementById(`pt${idx}`);
   const prompt=document.getElementById(`goldie-prompt-${idx}`);
-  if(sel) sel.value=(mode==='cpu')?'cpu:goldie':'human';
+  if(sel){
+    if(mode==='cpu'){
+      // "cpu:goldie" is intentionally NOT a static <option> in the dropdown
+      // template — <option style="display:none;"> does not reliably hide an
+      // option from a native <select> picker (iOS Safari in particular
+      // renders it as an OS-level control that ignores that CSS), so it was
+      // showing up as a browsable "Grandma Goldie" entry for every game, not
+      // just when The Afikomen prompt actually offered it. Inserted here,
+      // on demand, the moment it's genuinely chosen — never otherwise present.
+      if(!sel.querySelector('option[value="cpu:goldie"]')){
+        const opt=document.createElement('option');
+        opt.value='cpu:goldie';opt.textContent='🤖 Grandma Goldie';
+        sel.appendChild(opt);
+      }
+      sel.value='cpu:goldie';
+    } else {
+      sel.value='human';
+    }
+  }
   if(prompt) prompt.style.display='none';
 }
 
@@ -1926,7 +1939,13 @@ function startPickup(){
   });
   const allNaturals=[...naturalsInHand,...naturalsOnTable];
   if(allNaturals.length<2){setWarn('You need at least 2 natural cards (in hand or on table) to pick up the pile.');return;}
-  PU={step:1,topCard:top,selNats:[],allNats:allNaturals,naturalsInHand,naturalsOnTable};
+  // Wilds in hand may OPTIONALLY also join this first meld — the rules say
+  // wilds don't count TOWARD the 2-natural requirement, not that they're
+  // excluded from the meld entirely. Without this, a top card + 2 naturals
+  // that only forms a valid meld WITH a wild's help (bridging a gap, or
+  // simply needing a 4th card) was impossible to pick up at all.
+  const wildsInHand=orderedHand.filter(c=>c.wild);
+  PU={step:1,topCard:top,selNats:[],selWilds:[],allNats:allNaturals,naturalsInHand,naturalsOnTable,wildsInHand};
   renderPickup();
   document.getElementById('m-pickup').style.display='flex';
 }
@@ -1940,6 +1959,7 @@ function renderPickup(){
   if(PU.step===1){
     const handNats=PU.naturalsInHand||PU.allNats;
     const tableNats=PU.naturalsOnTable||[];
+    const wilds=PU.wildsInHand||[];
     let natsHtml=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;">From your hand:</div>
       <div class="flex gap-8 wrap" style="margin-bottom:${tableNats.length?'10px':'0'};">
         ${handNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
@@ -1948,6 +1968,13 @@ function renderPickup(){
       natsHtml+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:4px;">From your melds on table:</div>
         <div class="flex gap-8 wrap">
           ${tableNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
+        </div>`;
+    }
+    if(wilds.length){
+      natsHtml+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:10px;">Optional — also use a wild:</div>
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">Doesn't count toward the 2-natural minimum, but can join the meld if needed.</div>
+        <div class="flex gap-8 wrap">
+          ${wilds.map(c=>natCard(c,PU.selWilds.includes(c.id),true)).join('')}
         </div>`;
     }
     document.getElementById('pu-content').innerHTML=`
@@ -1961,12 +1988,13 @@ function renderPickup(){
       <button class="btn primary" style="width:100%" onclick="puStep2()">Next →</button>`;
   } else {
     const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
+    const selWildCards=(PU.selWilds||[]).map(id=>(PU.wildsInHand||[]).find(c=>c.id===id)).filter(Boolean);
     const fromTable=selNatCards.filter(c=>PU.naturalsOnTable&&PU.naturalsOnTable.some(t=>t.id===c.id));
     document.getElementById('pu-content').innerHTML=`
       <div style="font-size:13px;margin-bottom:0.75rem;">You will pick up all <strong>${G.discardPile.length} cards</strong> from the discard pile.</div>
       <div style="font-size:13px;font-weight:500;margin-bottom:6px;">Your first meld must include:</div>
       <div class="flex gap-8 wrap center" style="margin-bottom:0.5rem;">
-        ${rc(PU.topCard)} <span style="color:#666;font-size:13px;">+</span> ${selNatCards.map(c=>rc(c)).join('')}
+        ${rc(PU.topCard)} <span style="color:#666;font-size:13px;">+</span> ${selNatCards.map(c=>rc(c)).join('')}${selWildCards.length?` <span style="color:#666;font-size:13px;">+</span> ${selWildCards.map(c=>rc(c)).join('')}`:''}
         <span style="font-size:12px;color:#666;align-self:center;">(you can add more when melding)</span>
       </div>
       ${fromTable.length?`<div style="font-size:12px;color:#2e7d32;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:8px 10px;margin-bottom:0.75rem;">${cLbl(PU.topCard)} will be <strong>added to your existing meld</strong> containing ${fromTable.map(c=>cLbl(c)).join(', ')} — not played as a new meld.</div>`:''}
@@ -1975,21 +2003,31 @@ function renderPickup(){
   }
 }
 
-function natCard(c,picked){
+function natCard(c,picked,isWildOption){
   let cls=`nat-card ${cCol(c)}`;
   if(picked)cls+=' picked';
   if(c.joker||c.wild)cls+=' special-wild';
   if(c.qs)cls+=' special-qs';
-  return`<div class="${cls}" onclick="toggleNat(${c.id})">
-    <div style="font-size:15px;font-weight:700;">${c.rank}</div>
+  return`<div class="${cls}" onclick="${isWildOption?`toggleWild(${c.id})`:`toggleNat(${c.id})`}">
+    <div style="font-size:15px;font-weight:700;">${c.joker?'★':c.rank}</div>
     <div style="font-size:14px;">${c.suit}</div></div>`;
 }
 
 function toggleNat(id){
   const i=PU.selNats.indexOf(id);if(i>=0)PU.selNats.splice(i,1);else PU.selNats.push(id);
-  // Re-render just the nat cards section
+  rerenderPuNats();
+}
+
+function toggleWild(id){
+  const i=PU.selWilds.indexOf(id);if(i>=0)PU.selWilds.splice(i,1);else PU.selWilds.push(id);
+  rerenderPuNats();
+}
+
+function rerenderPuNats(){
+  // Re-render just the nat/wild cards section
   const handNats=PU.naturalsInHand||PU.allNats;
   const tableNats=PU.naturalsOnTable||[];
+  const wilds=PU.wildsInHand||[];
   let html=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;">From your hand:</div>
     <div class="flex gap-8 wrap" style="margin-bottom:${tableNats.length?'10px':'0'};">
       ${handNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}
@@ -1998,17 +2036,24 @@ function toggleNat(id){
     html+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:4px;">From your melds on table:</div>
       <div class="flex gap-8 wrap">${tableNats.map(c=>natCard(c,PU.selNats.includes(c.id))).join('')}</div>`;
   }
+  if(wilds.length){
+    html+=`<div style="font-size:12px;font-weight:500;color:#666;margin-bottom:4px;margin-top:10px;">Optional — also use a wild:</div>
+      <div style="font-size:11px;color:#888;margin-bottom:4px;">Doesn't count toward the 2-natural minimum, but can join the meld if needed.</div>
+      <div class="flex gap-8 wrap">${wilds.map(c=>natCard(c,PU.selWilds.includes(c.id),true)).join('')}</div>`;
+  }
   document.getElementById('pu-nats').innerHTML=html;
 }
 
 function puStep2(){
   if(PU.selNats.length<2){document.getElementById('pu-err').textContent='Select at least 2 natural cards.';return;}
-  // Pre-validate: check that top card + selected naturals form a valid meld
+  // Pre-validate: check that top card + selected naturals (+ any optionally
+  // selected wild) form a valid meld.
   const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
-  const testCards=[PU.topCard,...selNatCards];
+  const selWildCards=(PU.selWilds||[]).map(id=>(PU.wildsInHand||[]).find(c=>c.id===id)).filter(Boolean);
+  const testCards=[PU.topCard,...selNatCards,...selWildCards];
   const v=valMeld(testCards);
   if(!v.valid){
-    document.getElementById('pu-err').textContent=`These cards don't form a valid meld: ${v.msg} You can add more cards or change your selection.`;
+    document.getElementById('pu-err').textContent=`These cards don't form a valid meld: ${v.msg} You can add more cards (including a wild, if you have one) or change your selection.`;
     return;
   }
   PU.step=2;PU.preValidation=v;renderPickup();
@@ -2026,6 +2071,7 @@ function confirmPickup(){
 
   const topCard=cp.hand.find(c=>c.id===PU.topCard.id);
   const selNatCards=PU.selNats.map(id=>PU.allNats.find(c=>c.id===id)).filter(Boolean);
+  const selWildCards=(PU.selWilds||[]).map(id=>cp.hand.find(c=>c.id===id)).filter(Boolean);
 
   // Check if any selected naturals come from an existing meld on the table
   const fromTableCards=selNatCards.filter(c=>c._fromMeldIdx!==undefined);
@@ -2037,9 +2083,9 @@ function confirmPickup(){
     const meldIdx=fromTableCards[0]._fromMeldIdx;
     const existingMeld=cp.melds[meldIdx];
     if(existingMeld){
-      if(commitAddToMeld(existingMeld,[topCard,...fromHandCards])){
-        // Remove top card and any hand naturals from hand
-        [topCard,...fromHandCards].forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
+      if(commitAddToMeld(existingMeld,[topCard,...fromHandCards,...selWildCards])){
+        // Remove top card, any hand naturals, and any selected wild from hand
+        [topCard,...fromHandCards,...selWildCards].forEach(c=>{cp.hand=cp.hand.filter(h=>h.id!==c.id);});
         if(cp.handOrder) cp.handOrder=cp.handOrder.filter(id=>cp.hand.some(c=>c.id===id));
         cp.hasEverMelded=true;
         G.mustMeldTopId=null;G.mustNaturalIds=null;
@@ -2051,7 +2097,7 @@ function confirmPickup(){
 
   if(!melded){
     // All naturals from hand — create new meld
-    const meldCards=[topCard,...selNatCards].filter(Boolean);
+    const meldCards=[topCard,...selNatCards,...selWildCards].filter(Boolean);
     const v=valMeld(meldCards);
     if(v.valid){
       pushMeld(cp,meldCards,v.type);
@@ -2062,7 +2108,7 @@ function confirmPickup(){
       setSt(`Picked up ${all.length} cards and melded ${meldCards.map(c=>cLbl(c)).join(' ')}. Continue melding or discard.`);
     } else {
       G.mustMeldTopId=PU.topCard.id;
-      G.mustNaturalIds=new Set(PU.selNats);
+      G.mustNaturalIds=new Set([...PU.selNats,...(PU.selWilds||[])]);
       setSt(`Picked up ${all.length} cards! Select the top card + your naturals then tap "Meld selected".`);
     }
   }
@@ -3028,20 +3074,42 @@ function planPilePickup(cp,top){
   let best=null;
   const consider=pl=>{if(!best||pl.pts>best.pts)best=pl;};
 
-  // 'extend': the existing meld must already hold 2+ naturals.
+  // 'extend': the existing meld must already hold 2+ naturals. Also try
+  // WITH a wild alongside the top card, in case the top card alone doesn't
+  // fit but top+wild does (e.g. bridging a gap) — same fix as the human
+  // picker: wilds don't count TOWARD the 2-natural requirement, but aren't
+  // excluded from the meld once that requirement is otherwise met.
   cp.melds.forEach((m,mi)=>{
     if(m.cards.filter(c=>!c.wild).length<2) return;
-    if(canAddToMeld(m,[top])) consider({kind:'extend',meldIdx:mi,pts:cPts(top,false)});
+    if(canAddToMeld(m,[top])) consider({kind:'extend',meldIdx:mi,extra:[],pts:cPts(top,false)});
+    else {
+      const wilds=cp.hand.filter(c=>c.wild);
+      for(const w of wilds){
+        if(canAddToMeld(m,[top,w])){
+          consider({kind:'extend',meldIdx:mi,extra:[w],pts:cPts(top,false)+cPts(w,false)});
+          break;
+        }
+      }
+    }
   });
 
-  // 'new': top + 2 or 3 naturals from hand.
+  // 'new': top + 2 or 3 naturals from hand, optionally plus a wild when the
+  // naturals alone don't quite form a valid meld with the top card.
   const handNaturals=cp.hand.filter(c=>!c.wild);
+  const handWilds=cp.hand.filter(c=>c.wild);
   for(const pair of combinations(handNaturals,2)){
     const c3=[top,...pair];
     if(valMeld(c3).valid) consider({kind:'new',cards:c3,pts:c3.reduce((a,c)=>a+cPts(c,false),0)});
     for(const extra of handNaturals.filter(c=>!pair.includes(c))){
       const c4=[top,...pair,extra];
       if(valMeld(c4).valid) consider({kind:'new',cards:c4,pts:c4.reduce((a,c)=>a+cPts(c,false),0)});
+    }
+    // Only bother trying a wild alongside these two naturals if the
+    // naturals-only combos above didn't already find something — this pair
+    // needs a wild's help, not just extra points.
+    for(const w of handWilds){
+      const c3w=[top,...pair,w];
+      if(valMeld(c3w).valid) consider({kind:'new',cards:c3w,pts:c3w.reduce((a,c)=>a+cPts(c,false),0)});
     }
   }
   return best;
@@ -3068,9 +3136,10 @@ function cpuDraw(cp){
 
       let used=[];
       if(plan.kind==='extend'){
-        if(commitAddToMeld(cp.melds[plan.meldIdx],[top])){
-          cpuLog(`added ${cLbl(top)} to an existing meld`);
-          used=[top];
+        const extra=plan.extra||[];
+        if(commitAddToMeld(cp.melds[plan.meldIdx],[top,...extra])){
+          cpuLog(`added ${cpuLogCards([top,...extra])} to an existing meld`);
+          used=[top,...extra];
         }
       } else {
         if(cpuCommitMeld(cp,plan.cards)){
@@ -3945,34 +4014,34 @@ function showRules(tab){
       <p style="margin-top:8px;"><strong>Deal:</strong> Each player gets 13 cards. The first player (left of dealer) gets 14 and may meld — even going out (Dream!) — before discarding one to begin play.</p>
       <p style="margin-top:8px;"><strong>Each turn:</strong></p>
       <ol style="margin:4px 0 8px 16px;padding:0;">
-        <li style="margin-bottom:4px;">Draw from the deck <em>or</em> pick up the entire discard pile (you must immediately meld the top card using 2+ naturals from your hand)</li>
+        <li style="margin-bottom:4px;">Draw a fresh card from the deck <em>or</em> pick up the entire pile (you must immediately meld the top card using 2+ naturals from your hand or table — a wild may optionally join too, once that requirement is met)</li>
         <li style="margin-bottom:4px;">Optionally redeem a Joker from one of your own melds by providing the card it was declared as — it returns to your hand and you may meld it whenever you like (no requirement to meld it right away)</li>
-        <li style="margin-bottom:4px;">Meld cards to the table: sets of 3–4 same rank, or runs of 3+ cards in same suit. Any meld with wilds needs at least 2 natural cards.</li>
+        <li style="margin-bottom:4px;">Meld cards to the table: sets of 3–4 same rank, or runs of 3+ cards in same suit. Any meld with wilds needs at least 2 natural cards. Once played, a meld can never be rearranged — a wild permanently owns whichever position it was placed in.</li>
         <li>Discard one card — mandatory, even when going out</li>
       </ol>
-      <p><strong>Wilds in runs:</strong> Your selection order determines which rank a wild fills. Cards selected left-to-right go low-to-high — wilds to the left extend down, wilds to the right extend up. No wild may occupy the Q♠ position in a spades run.</p>
-      <p style="margin-top:8px;"><strong>Calling cards:</strong> Once you've melded, you must announce your card count ("I have 2") before discarding if you'll have ≤3 cards left, or if a single draw could let you go out. Forgetting blocks you from going out next turn.</p>
-      <p style="margin-top:8px;"><strong>Going out:</strong> Meld everything and discard your last card. You cannot go out by melding your final card — a discard is always required.</p>
+      <p><strong>Wilds:</strong> When a wild's position is ambiguous (it could validly represent more than one card), the game shows you the legal options to tap — no guessing or typing required. No wild may ever occupy the Q♠ position in a spades run.</p>
+      <p style="margin-top:8px;"><strong>Calling cards:</strong> Once you've melded, you must call (just confirm your count — it's always your hand minus your discard, never a choice) before discarding, if you'll have ≤3 cards left or a single draw could let you go out. <strong>You cannot go out unless you called on an earlier turn</strong> — exceptions: your very first meld of the hand (protects Bagel/Dream), or picking up a pile of more than 2 cards that lets you go out immediately.</p>
+      <p style="margin-top:8px;"><strong>Going out:</strong> Meld everything and discard your last card. You cannot go out by melding your final card, or by melding down to exactly one card without having called — a discard is always required, and going out is blocked without a prior call.</p>
       <p style="margin-top:8px;"><strong>Bonuses (tallied at game end when someone reaches 1000 pts):</strong><br>
-      ✓ <strong>Check</strong> = +100 pts: Perfect Cut, No Wilds, All Below 8, All Above 7, or Dream<br>
+      ✓ <strong>Check</strong> = +100 pts: Perfect Cut, No Wilds, All Below (only 3–7s, wilds OK), All Above (only 8–A, wilds OK), or Dream<br>
       ⊙ <strong>Bagel</strong> = +250 pts: go out with all 13 cards in one turn (not your first turn)<br>
       ✨ <strong>Dream</strong> = check: go out with all 13 cards on your very first turn</p>
-      <p style="margin-top:8px;"><strong>Money:</strong> Going out = collect 5¢ from each player. Bagel or Dream = 10¢ each. At game end, highest scorer after bonuses collects 5¢ per 500 pt difference from each other player.</p>`;
+      <p style="margin-top:8px;"><strong>Money:</strong> Going out = collect 5¢ from each player. Bagel or Dream = 10¢ each. At game end, the +200 end-game bonus goes to whoever went out on the final hand, then the highest scorer collects 5¢ per 500 pt difference from each other player.</p>`;
   } else {
     el.innerHTML=`
-      <p><strong>Setup:</strong> Choose number of players, enter names, select human or CPU for each. CPU types: 🤖 Conservative (plays it safe) or 🎲 Gambler (holds cards hunting for a Bagel). Tap Deal first hand.</p>
-      <p style="margin-top:8px;"><strong>Screen layout:</strong> All players' zones are shown on the left — your active zone is highlighted with a border. The draw pile, discard pile, and hand scores are in the sidebar on the right.</p>
-      <p style="margin-top:8px;"><strong>The Cut:</strong> Slide to choose where to cut the deck. Peek at the bottom card of your cut — if it's special (Deuce, Joker, Q♠) you keep it; keep peeking until you find a normal card. That card goes to the bottom of the draw pile — only you know what it is.</p>
+      <p><strong>Setup:</strong> Choose number of players, enter names, and select Human, Random CPU, or a specific character for each — any mix of humans and CPUs is supported. Each CPU has its own hidden personality and strategy, discovered through play rather than labeled up front. Tap Deal first hand.</p>
+      <p style="margin-top:8px;"><strong>Screen layout:</strong> All players' zones are shown on the left — your active zone is highlighted with a border. The deck, pile, and hand scores are in the sidebar on the right.</p>
+      <p style="margin-top:8px;"><strong>The Cut:</strong> Slide to choose where to cut the deck. Peek at the bottom card of your cut — if it's special (Deuce, Joker, Q♠) you keep it; keep peeking until you find a normal card. That card goes to the bottom of the deck — only you know what it is.</p>
       <p style="margin-top:8px;"><strong>Selecting cards:</strong> Tap a card to select it (highlighted border). Tap again to deselect. Select multiple cards for melding. Select exactly one to discard.</p>
-      <p style="margin-top:8px;"><strong>Reordering your hand:</strong> Hold and drag a card to move it. This matters for wilds in runs — selection order from left to right determines which rank a wild fills.</p>
-      <p style="margin-top:8px;"><strong>Melding:</strong> Select 3+ cards → tap Meld selected. For runs with a Joker, declare what card the Joker represents (the game auto-detects when unambiguous). You can also tap Add to meld to extend an existing meld.</p>
-      <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the discard pile top card in the sidebar. Select 2+ natural cards to meld with it, then confirm.</p>
+      <p style="margin-top:8px;"><strong>Reordering your hand:</strong> Hold and drag a card to move it. Your opening hand is automatically arranged to group likely melds — this is just a starting point, and "Reset order" is always available.</p>
+      <p style="margin-top:8px;"><strong>Melding:</strong> Select 3+ cards → tap Meld selected. Whenever a wild's position is ambiguous, the game shows the legal options as tappable cards — the one matching your selection order is pre-picked, so usually you just confirm. You can also tap Add to meld to extend an existing meld, which offers the same tappable choice when relevant.</p>
+      <p style="margin-top:8px;"><strong>Picking up the pile:</strong> Tap the pile in the sidebar. Select 2+ natural cards to meld with the top card — a wild can optionally join too if you have one and need it, though it never counts toward the 2-natural minimum on its own.</p>
       <p style="margin-top:8px;"><strong>Redeeming a Joker:</strong> After drawing, tap Redeem joker. You can only redeem a Joker from your own melds (you need the natural card it was declared as in your hand). It comes back into your hand and isn't required to be melded right away.</p>
-      <p style="margin-top:8px;"><strong>Calling cards:</strong> When required, the Call button appears before discarding. Tap it and confirm your card count.</p>
-      <p style="margin-top:8px;"><strong>Discard history:</strong> The small faded cards beside the top discard card in the sidebar show recent discards — up to one full round back.</p>
-      <p style="margin-top:8px;"><strong>Human vs CPU — Continue button:</strong> After each CPU turn, a Continue ▶ button appears inside the CPU's zone. Tap it to proceed to your next turn.</p>
-      <p style="margin-top:8px;"><strong>Passing the device (all-human):</strong> After each turn, a handoff screen shows the table state. Tap "I'm [Name] — show my hand" to reveal your cards.</p>
-      <p style="margin-top:8px;"><strong>Scores:</strong> Tap Scores at any time to see the full scorecard. Bagel scores are circled ⊙, checks appear as ✓ ticks.</p>
+      <p style="margin-top:8px;"><strong>Calling cards:</strong> When required, the Call button appears before discarding. It's always a confirmation of your exact count, never a number you choose — just tap to confirm.</p>
+      <p style="margin-top:8px;"><strong>Only the top of the pile is visible.</strong> Matching the real rules, past discards aren't kept on screen — remembering what's been played is part of the game.</p>
+      <p style="margin-top:8px;"><strong>Seeing what happened while you were away:</strong> A "Last turn" panel in the sidebar always shows what the previous player just did. A "Full round summary" button appears there too when more than one player has acted since your last turn.</p>
+      <p style="margin-top:8px;"><strong>Passing the device (multiple humans):</strong> After each turn, a handoff screen shows the table state. Tap "I'm [Name] — show my hand" to reveal your cards.</p>
+      <p style="margin-top:8px;"><strong>Scores:</strong> Tap Scores at any time to see the full scorecard, including the final bonus/settlement breakdown once the game has ended. Bagel scores are circled ⊙, checks appear as ✓ ticks.</p>
       <p style="margin-top:8px;color:#666;font-size:12px;"><strong>Tip:</strong> The small colored dot in the corner of each card (red or blue) shows which physical deck it came from — useful for verifying no cards were lost or duplicated.</p>`;
   }
 }

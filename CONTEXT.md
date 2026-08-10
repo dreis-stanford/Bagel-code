@@ -179,6 +179,35 @@ breaks an actual RULES.md requirement.
 - CPU illegal meld bug: centralized ALL meld creation/extension through `commitNewMeld()`/`commitAddToMeld()`, which always re-validate via `valMeld()` no matter the call site. Fixed the specific root cause in `cpuDraw()`'s pile-pickup path, which was force-merging hand cards onto an existing meld without validation when the "nice" merge failed and there weren't enough cards for a standalone meld.
 - Ambiguous wild-in-run declaration bug: a Deuce (or Joker) that could validly extend a run from either end (e.g. Q,K,+wild = J-Q-K or Q-K-A) was silently resolved via selection click-order with no way for the player to confirm/override, unlike Jokers which already had a "declare" prompt for ambiguous cases — except that prompt was gated to Jokers only (`c.joker`) and ignored Deuces (`c.wild`). Generalized the declare/ambiguous-detection UI in `openMeld()`/`confirmMeld()` to all wild cards, and made `tryRun()` honor an explicit `declaredAs` so the chosen run interpretation matches the player's stated intent rather than click order.
 
+## In-game Rules modal was badly out of date (fixed 2026-08-09-26)
+
+Discovered when the user pointed out the in-game "?" Rules modal (`showRules()`
+in index.html, TWO tabs: "Game Rules" and "Playing on Screen") is a SEPARATE
+hardcoded copy of rules text, entirely independent of `RULES.md` — and had
+not been touched since early in the project despite many rules and UI
+changes since. Found and fixed on a full audit:
+- "Game Rules" tab: wild-position description still described the old
+  click-order-only mechanic (superseded by the tappable picker, 2026-08-08-6);
+  calling-cards description didn't reflect the confirm-only redesign or the
+  must-have-called-on-an-earlier-turn requirement (2026-08-09); All
+  Below/Above bonus wording was confusingly phrased; end-game bonus recipient
+  wasn't mentioned.
+- "Playing on Screen" tab had THREE flatly wrong sections: named
+  Conservative/Gambler as the only CPU types (retired for 8 named personas,
+  2026-08-08-3+), described a per-CPU-turn "Continue ▶" button (removed for
+  consolidated round summaries, 2026-08-09-1), and described a discard-history
+  strip beside the top card (removed entirely — only the top card is visible
+  now, matching the actual rule, 2026-08-09-1).
+Both tabs rewritten. The Grandma Goldie/Afikomen easter egg is deliberately
+NOT mentioned in either tab — it's discovered through play by design, and
+explaining it in the help text would spoil it. Also added "— According to
+Mohel" to the modal's own title, matching `RULES.md`.
+
+**Lesson:** the in-game help text and `RULES.md` are two independent copies
+that must be updated together whenever a rule or major UI mechanic changes —
+there is no single source of truth doing this automatically. Worth a
+periodic audit pass (like this one) rather than assuming they stay in sync.
+
 ## Known issues / next session
 **See `DEFERRED_BUGS.md` for full write-ups, reported examples, and
 investigation leads — that file is the source of truth for in-progress bug

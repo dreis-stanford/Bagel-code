@@ -93,6 +93,8 @@ Each turn follows this sequence:
 ### Wild Card Position in Runs
 The order in which cards are selected for a run defines the sequence (low to high, left to right). Wilds placed to the left of the leftmost natural extend the run downward; wilds to the right extend it upward. This allows players to specify exactly which rank a wild represents.
 
+> *Digital app note:* whenever a wild's position is genuinely ambiguous, the app shows every legal option as a tappable card instead of relying on click order alone — the option matching your selection order is pre-picked, so you usually just confirm, but you can always tap a different legal option if that's not what you meant. For physical play, selection order remains how you communicate intent.
+
 ### Meld Restrictions
 - You may only add cards to your own melds.
 - Once played, melds cannot be rearranged (except via Joker redemption). In particular, **a wild permanently owns the position it was played into** — if a wild stands in for 8♠, that slot is filled forever, and a natural 8♠ can never be added to displace it. You may still extend the run at either end.

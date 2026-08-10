@@ -337,6 +337,67 @@ as before.
 
 ---
 
+## Resolved — pile pickup blocked when a wild was needed alongside 2 naturals (2026-08-09-25)
+
+**Reported:** if you want to pick up the pile and have two naturals to go
+with the top card, but ALSO need a wild to complete the meld (e.g. the top
+card and your two naturals leave a gap only a wild can bridge), you were
+blocked from doing so — with a follow-up from the user that this likely also
+affected adding to an existing meld, which turned out to be correct.
+
+**Root cause:** the human pickup picker (`startPickup`/`renderPickup`) only
+ever offered NATURAL cards for selection — `naturalsInHand`/`naturalsOnTable`
+were both filtered to `!c.wild`, and `puStep2()`'s validation checked
+`[topCard, ...selectedNaturals]` with no way to include a wild at all. The
+rule ("wilds do not count as naturals for the 2-natural pickup requirement")
+was being read as "wilds are excluded from this meld entirely," which isn't
+what it says — it only means a wild can't count TOWARD the 2-natural
+minimum, not that one can't ALSO join the meld once that minimum is met by
+actual naturals. Both the "create a new meld" and "extend an existing meld"
+commit paths were affected, since they share the same natural-only
+selection. The CPU's own pile-pickup planner (`planPilePickup`) had the
+identical gap on both its 'new' and 'extend' branches.
+
+**Fix:** the picker now shows an optional "also use a wild" section
+(`PU.selWilds`, `toggleWild`), clearly labeled as not counting toward the
+2-natural minimum. Validation and both commit paths (`confirmPickup`'s new-
+meld and extend-meld branches) now include any selected wild(s) alongside
+the naturals and top card. `planPilePickup` was extended symmetrically: its
+'extend' branch tries top+wild when top alone doesn't fit an existing meld's
+2+ naturals, and its 'new' branch tries 2 naturals+wild when the naturals
+alone don't validate with the top card.
+
+Verified: the exact reported scenario (top card + 2 naturals with a gap only
+a wild bridges) now validates correctly and is blocked under the old
+naturals-only check, confirming the wild was genuinely necessary; the CPU
+planner finds the equivalent extend-with-wild plan; ordinary pickups that
+never needed a wild are unaffected on both the human and CPU sides.
+
+---
+
+## Resolved — "Grandma Goldie" visible in the CPU dropdown for every game (2026-08-09-24)
+
+**Reported:** the "Grandma Goldie" CPU option was showing up in the player
+type dropdown even for games where nobody had triggered The Afikomen.
+
+**Root cause:** `<option value="cpu:goldie" style="display:none;">` was
+placed statically in the dropdown template, intending to stay hidden until
+`setGoldiePlayMode()` selected it programmatically. `<option>` elements
+inside a native `<select>` are rendered by the OS-level picker control on
+many platforms — iOS Safari in particular — which does not respect CSS
+`display:none` on individual options the way it would on ordinary HTML
+elements. So the "hidden" option was visible in the browsable list the
+whole time, on every game.
+
+**Fix:** removed the static option from the template entirely.
+`setGoldiePlayMode()` now creates and appends the option to the `<select>`
+on demand, only at the exact moment "CPU" is actually chosen from the
+Afikomen prompt — never present otherwise, and only for the one slot where
+it was chosen (not duplicated if the choice is made more than once, guarded
+via `querySelector`).
+
+---
+
 ## Resolved — regression from the previous fix: humans couldn't discard (2026-08-09-11)
 
 **The 2026-08-09-10 guard broke ordinary play.** It re-armed `G._turnEnded`
